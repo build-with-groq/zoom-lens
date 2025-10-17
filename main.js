@@ -83,6 +83,13 @@ import {
   clearSalesforceCredentialsRoute
 } from "./salesforce-routes.js";
 import {
+  setSalesforceFocus,
+  getSalesforceFocus,
+  clearSalesforceFocus,
+  parseFocusGoal,
+  suggestFocusGoals
+} from "./salesforce-focus.js";
+import {
   intelligentRouter,
   correctZoomSpelling,
   detectZoomTrigger,
@@ -454,6 +461,79 @@ app.get('/salesforce/oauth/callback', handleSalesforceOAuthCallback);
 app.post('/api/salesforce/credentials', setSalesforceCredentialsRoute);
 app.delete('/api/salesforce/credentials', clearSalesforceCredentialsRoute);
 
+// Salesforce Focus/Goal Management Endpoints
+app.get('/api/salesforce/focus', (c) => {
+  const userId = c.req.query('userId') || 'default';
+  const focus = getSalesforceFocus(userId);
+  
+  return c.json({
+    success: true,
+    hasFocus: !!focus,
+    focus: focus || null
+  });
+});
+
+app.post('/api/salesforce/focus', async (c) => {
+  try {
+    const body = await c.req.json();
+    const userId = body.userId || 'default';
+    const naturalLanguageGoal = body.goal || body.description;
+    
+    if (!naturalLanguageGoal) {
+      return c.json({
+        success: false,
+        error: 'Goal description is required'
+      }, 400);
+    }
+    
+    // Parse natural language goal into structured format
+    const parsedGoal = parseFocusGoal(naturalLanguageGoal);
+    
+    // Allow override with explicit fields
+    if (body.recordId) parsedGoal.recordId = body.recordId;
+    if (body.recordType) parsedGoal.recordType = body.recordType;
+    if (body.name) parsedGoal.name = body.name;
+    if (body.context) parsedGoal.context = body.context;
+    
+    const result = setSalesforceFocus(userId, parsedGoal);
+    
+    return c.json(result);
+  } catch (error) {
+    console.error('Error setting Salesforce focus:', error);
+    return c.json({
+      success: false,
+      error: error.message
+    }, 500);
+  }
+});
+
+app.delete('/api/salesforce/focus', (c) => {
+  const userId = c.req.query('userId') || 'default';
+  const result = clearSalesforceFocus(userId);
+  
+  return c.json(result);
+});
+
+app.get('/api/salesforce/focus/suggestions', async (c) => {
+  try {
+    // Get recent transcripts to analyze for suggestions
+    const recentTranscripts = getRecentTranscripts();
+    const suggestions = suggestFocusGoals(recentTranscripts);
+    
+    return c.json({
+      success: true,
+      suggestions
+    });
+  } catch (error) {
+    console.error('Error generating focus suggestions:', error);
+    return c.json({
+      success: false,
+      error: error.message,
+      suggestions: []
+    }, 500);
+  }
+});
+
 // AI inference and routing functions are now imported from ai-inference.js
 // Set built-in handlers in the tool registry
 setBuiltinHandlers({
@@ -782,7 +862,7 @@ Respond in JSON format:
 }`;
 
     const discoveryResponse = await groqClient.chat.completions.create({
-      model: "openai/gpt-oss-20b",
+      model: "openai/gpt-oss-20b", // Using faster 20b model for quick analysis
       messages: [
         { role: "system", content: `You are a discovery analysis AI that identifies opportunities for providing helpful background information. Today's date is ${today}.` },
         { role: "user", content: discoveryPrompt }
@@ -855,7 +935,7 @@ Rules:
 Output format: [Single factual sentence]`;
 
           const researcherResponse = await groqClient.chat.completions.create({
-            model: "openai/gpt-oss-20b",
+            model: "openai/gpt-oss-20b", // Using faster 20b model for quick fact extraction
             messages: [
               { role: "system", content: `You are a fact extractor. Extract ONLY the single most important fact. Maximum 20 words. No preamble, no explanation, just the fact. Today's date is ${today}.` },
               { role: "user", content: researcherPrompt }
@@ -876,7 +956,7 @@ Output format: [Single factual sentence]`;
 Remove any fluff. Keep only the core fact.`;
 
           const finalDistillationResponse = await groqClient.chat.completions.create({
-            model: "openai/gpt-oss-120b",
+            model: "openai/gpt-oss-20b", // Using faster 20b model - good enough for compression
             messages: [
               { role: "system", content: `You are a text compressor. Output ONLY 1 sentence, max 15 words. Today's date is ${today}.` },
               { role: "user", content: finalDistillationPrompt }

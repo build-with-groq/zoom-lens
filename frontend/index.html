@@ -598,6 +598,53 @@
                     </div>
                     <div class="text-gray-600 text-xs truncate" x-text="instanceUrl"></div>
                   </div>
+                  
+                  <!-- Salesforce Focus/Goal Feature (NEW!) -->
+                  <div x-show="isConfigured" x-data="salesforceFocus()" x-init="init()" class="mt-3 p-3 bg-white rounded-xl border border-gray-300 text-xs">
+                    <div class="flex items-center gap-2 mb-2">
+                      <span class="text-lg">🎯</span>
+                      <span class="font-semibold text-gray-800">Sales Focus</span>
+                      <span class="text-gray-500 text-xs">(Beta)</span>
+                    </div>
+                    
+                    <!-- Show current focus if set -->
+                    <div x-show="hasFocus" class="mb-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
+                      <div class="flex items-center justify-between mb-1">
+                        <span class="text-gray-700 font-medium text-xs">Current Focus:</span>
+                        <button @click="clearFocus" class="text-xs">Clear</button>
+                      </div>
+                      <div class="text-gray-800 text-xs font-medium" x-text="currentFocus?.description"></div>
+                      <div x-show="currentFocus?.name" class="text-gray-600 text-xs mt-1">
+                        <span class="font-medium">Name:</span> <span x-text="currentFocus?.name"></span>
+                      </div>
+                      <div x-show="currentFocus?.recordType" class="text-gray-600 text-xs">
+                        <span class="font-medium">Type:</span> <span x-text="currentFocus?.recordType"></span>
+                      </div>
+                    </div>
+                    
+                    <!-- Set new focus -->
+                    <div x-show="!hasFocus" class="space-y-2">
+                      <input 
+                        type="text"
+                        x-model="focusInput"
+                        @keydown.enter="setFocus"
+                        placeholder='e.g., "Working on Bob Jones deal" or "Focusing on Acme Corp account"'
+                        class="w-full px-3 py-2 text-xs bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 border border-gray-300"
+                      />
+                      <div class="flex gap-2">
+                        <button 
+                          @click="setFocus"
+                          :disabled="!focusInput.trim()"
+                          class="flex-1 bg-transparent border border-gray-400 text-gray-800 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-100 hover:border-gray-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Set Focus
+                        </button>
+                      </div>
+                      <div class="text-gray-600 text-xs">
+                        <strong>What's this?</strong> Set a focus to make AI prioritize actions related to a specific lead, contact, or deal.
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1210,6 +1257,107 @@
           } else {
             console.error('❌ Could not find transcript app or checkForZoomTrigger function');
             console.log('App object:', app);
+          }
+        }
+      };
+    }
+
+    function salesforceFocus() {
+      return {
+        hasFocus: false,
+        currentFocus: null,
+        focusInput: '',
+        loading: false,
+
+        async init() {
+          await this.loadFocus();
+        },
+
+        async loadFocus() {
+          try {
+            const response = await fetch('/api/salesforce/focus');
+            const data = await response.json();
+            
+            if (data.success && data.hasFocus) {
+              this.hasFocus = true;
+              this.currentFocus = data.focus;
+            }
+          } catch (error) {
+            console.error('Error loading Salesforce focus:', error);
+          }
+        },
+
+        async setFocus() {
+          if (!this.focusInput.trim()) {
+            return;
+          }
+
+          this.loading = true;
+
+          try {
+            const response = await fetch('/api/salesforce/focus', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                goal: this.focusInput.trim()
+              })
+            });
+
+            const result = await response.json();
+
+            if (result.success && result.goal) {
+              this.hasFocus = true;
+              this.currentFocus = result.goal;
+              this.focusInput = '';
+              
+              console.log('🎯 Salesforce focus set:', this.currentFocus);
+              
+              // Show success notification
+              if (typeof Alpine !== 'undefined') {
+                // Dispatch custom event that transcript app can listen to
+                window.dispatchEvent(new CustomEvent('salesforce-focus-set', {
+                  detail: this.currentFocus
+                }));
+              }
+            } else {
+              console.error('Failed to set focus:', result.error);
+              alert('Failed to set focus: ' + (result.error || 'Unknown error'));
+            }
+          } catch (error) {
+            console.error('Error setting Salesforce focus:', error);
+            alert('Error setting focus. Please try again.');
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        async clearFocus() {
+          if (!confirm('Clear the current Salesforce focus?')) {
+            return;
+          }
+
+          try {
+            const response = await fetch('/api/salesforce/focus', {
+              method: 'DELETE'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+              this.hasFocus = false;
+              this.currentFocus = null;
+              this.focusInput = '';
+              
+              console.log('🎯 Salesforce focus cleared');
+              
+              // Dispatch custom event
+              window.dispatchEvent(new CustomEvent('salesforce-focus-cleared'));
+            }
+          } catch (error) {
+            console.error('Error clearing Salesforce focus:', error);
+            alert('Error clearing focus. Please try again.');
           }
         }
       };

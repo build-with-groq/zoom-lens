@@ -8,6 +8,7 @@ import { getAvailableTools } from "./tool-registry-unified.js";
 import { getSalesforceSessionId } from "./auth-utils.js";
 import { processToolAuth } from "./auth-utils.js";
 import { SALESFORCE_MCP_URL } from "./config.js";
+import { getSalesforceFocus, getFocusGoalPrompt } from "./salesforce-focus.js";
 
 // Enhanced AI-powered router that decides which tools and specific MCP functions to use
 export async function intelligentRouter(question, userName, context = {}, chatHistory = []) {
@@ -757,6 +758,11 @@ export async function performGroqInference(transcript, userName, context = 'gene
 
         // Get Salesforce credentials if needed - add as a user message like the playground
         const sfCreds = getSalesforceSessionId('default');
+        
+        // Get Salesforce focus goal if set
+        const sfFocus = getSalesforceFocus('default');
+        const focusPrompt = sfFocus ? getFocusGoalPrompt(sfFocus) : '';
+        
         const messages = [];
         
         // Add system message with today's date and instructions about chat history
@@ -769,8 +775,16 @@ CRITICAL INSTRUCTIONS:
 
 2. For Salesforce MCP tools: Credentials are provided in the conversation. Call data functions directly (sf_search_leads, sf_create_note, sf_run_soql_query, etc.).
 
-3. CRITICAL: Call each tool function EXACTLY ONCE per action. Do NOT repeat the same tool call multiple times.`
+3. CRITICAL: Call each tool function EXACTLY ONCE per action. Do NOT repeat the same tool call multiple times.${focusPrompt}`
         });
+        
+        if (sfFocus) {
+          console.log(`🎯 Salesforce Focus Active:`, {
+            description: sfFocus.description,
+            recordId: sfFocus.recordId || 'N/A',
+            name: sfFocus.name || 'N/A'
+          });
+        }
         
         // Add chat history for context if available (wrap in XML tags)
         // Note: chatHistory comes from frontend with newest first, so we need to reverse it

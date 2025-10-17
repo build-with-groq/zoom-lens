@@ -4,7 +4,7 @@
   "tasks": {
     "serve": "deno serve --port 9995 --watch --allow-read --allow-env --allow-write --allow-net --allow-import ./main.js",
     "git": "git add . && git commit -m 'Update' && git push origin main",
-    "prod": "deployctl deploy --prod --project=zoom-rtms"
+    "deploy": "deployctl deploy --prod --project=zoom-rtms"
   },
   "$schema": "https://raw.githubusercontent.com/denoland/deno/348900b8b79f4a434cab4c74b3bc8d4d2fa8ee74/cli/schemas/config-file.v1.json",
   "lock": false,

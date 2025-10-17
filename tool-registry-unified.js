@@ -64,6 +64,8 @@ export const UNIFIED_TOOL_REGISTRY = {
     description: 'Complete Salesforce CRM integration - handles ALL sales operations including leads, contacts, accounts, opportunities, tasks, notes, and SOQL queries. This MCP server provides 30+ functions for comprehensive CRM management.',
     routing_keywords: ['salesforce', 'crm', 'lead', 'leads', 'contact', 'contacts', 'account', 'accounts', 'opportunity', 'opportunities', 'soql', 'query', 'sales', 'SELECT', 'FROM', 'WHERE', 'LIMIT', 'task', 'note', 'convert', 'pipeline', 'deal', 'prospect', 'customer', 'bob', 'jones', 'email', 'send', 'remember', 'remind', 'follow up', 'note about', 'add note'],
     trigger_prompt: 'Use this for ANY sales or CRM-related requests. This tool handles: 1) Lead management (create/search/update/convert leads), 2) Account management (companies), 3) Contact management (people), 4) Opportunity management (deals/pipeline), 5) Task management (follow-ups), 6) Note management (conversation logs - use sf_create_note to add notes to contacts/leads), 7) SOQL queries (any SELECT query), 8) General record operations (get/update any record type). IMPORTANT: When users say "add a note to [person]" or "remind me to email [person]", use sf_search_contacts to find the contact, then use sf_create_note to add the note. The MCP server will intelligently select the right function from 30+ available operations.',
+    // NEW: Persistent focus/goal feature - stores the current sales focus (e.g., "working on Bob Jones deal ID 00Q...")
+    focus_goal: null, // Will be set dynamically when user sets a focus
     server_label: 'Salesforce',
     server_url: '', // Will be set dynamically
     require_approval: 'never',
