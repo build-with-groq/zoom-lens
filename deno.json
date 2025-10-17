@@ -1,0 +1,43 @@
+{
+  "name": "zoom-lens",
+  "description": "Zoom Real-Time Meeting Service (RTMS) for real-time transcript streaming",
+  "tasks": {
+    "serve": "deno serve --port 9995 --watch --allow-read --allow-env --allow-write --allow-net --allow-import ./main.js",
+    "git": "git add . && git commit -m 'Update' && git push origin main",
+    "prod": "deployctl deploy --prod --project=zoom-rtms"
+  },
+  "$schema": "https://raw.githubusercontent.com/denoland/deno/348900b8b79f4a434cab4c74b3bc8d4d2fa8ee74/cli/schemas/config-file.v1.json",
+  "lock": false,
+  "compilerOptions": {
+    "noImplicitAny": false,
+    "strict": true,
+    "lib": [
+      "deno.ns",
+      "deno.unstable"
+    ]
+  },
+  "lint": {
+    "rules": {
+      "exclude": [
+        "no-explicit-any"
+      ]
+    }
+  },
+  "node_modules_dir": false,
+  "imports": {
+    "npm:openai": "npm:openai@4.52.7"
+  },
+  "experimental": {
+    "unstable-node-globals": true,
+    "unstable-worker-options": true,
+    "unstable-sloppy-imports": true
+  },
+  "deploy": {
+    "project": "1cf65472-e492-495f-99fe-5c0dca468991",
+    "exclude": [
+      "**/node_modules"
+    ],
+    "include": [],
+    "entrypoint": "main.js"
+  }
+}

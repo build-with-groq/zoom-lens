@@ -1,0 +1,2424 @@
+<!-- <!doctype html> -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Your AI-powered meeting companion that brings clarity to every conversation" />
+  <meta name="zoom-app" content="true" />
+  <meta property="og:title" content="Zoom Lens" />
+  <title>Zoom Lens</title>
+  <link rel="icon" href="https://st1.zoom.us/homepage/publish/primary/assets/images/zoom.ico" sizes="32x32">
+  <!-- <link rel="icon" href="https://groq.com/favicon.ico" sizes="32x32"> -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Markdown rendering library - must load before Alpine.js -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+  <script defer src="/@alpinejs@3.12.3.cdn.min.js"></script>
+  <script>
+    tailwind.config = {{TAILWIND_CONFIG}}
+  </script>
+  <style type="text/tailwindcss">
+    {{STYLES}}
+  </style>
+  <style>
+    /* Hide scrollbar while keeping scroll functionality */
+    .scrollbar-hide {
+      -ms-overflow-style: none;  /* IE and Edge */
+      scrollbar-width: none;  /* Firefox */
+    }
+    .scrollbar-hide::-webkit-scrollbar {
+      display: none;  /* Chrome, Safari and Opera */
+    }
+
+    /* Markdown content styling */
+    .markdown-content {
+      line-height: 1.6;
+    }
+    
+    .markdown-content table {
+      width: auto;
+      min-width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.875rem;
+      border-radius: 0.75rem;
+      overflow: hidden;
+      box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    }
+    
+    .markdown-content thead {
+      background-color: #f6f8fa;
+      border-bottom: 2px solid #d0d7de;
+      color: #24292f;
+    }
+    
+    .markdown-content th {
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.025em;
+      color: #57606a;
+    }
+    
+    .markdown-content td {
+      padding: 0.5rem 0.75rem;
+      border-top: 1px solid #d0d7de;
+    }
+    
+    .markdown-content tbody tr:hover {
+      background-color: #f6f8fa;
+    }
+    
+    .markdown-content code {
+      background-color: #f3f4f6;
+      padding: 0.125rem 0.5rem;
+      border-radius: 0.5rem;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+      font-size: 0.875em;
+    }
+    
+    .markdown-content pre {
+      background-color: #1f2937;
+      color: #f3f4f6;
+      padding: 1rem;
+      border-radius: 0.75rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+      box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    }
+    
+    .markdown-content pre code {
+      background: none;
+      padding: 0;
+      color: inherit;
+    }
+    
+    .markdown-content ul, .markdown-content ol {
+      margin: 0.5rem 0;
+      padding-left: 1.5rem;
+    }
+    
+    .markdown-content li {
+      margin: 0.25rem 0;
+    }
+    
+    .markdown-content p {
+      margin: 0.5rem 0;
+    }
+    
+    .markdown-content h1, .markdown-content h2, .markdown-content h3 {
+      margin-top: 1rem;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+    }
+    
+    .markdown-content blockquote {
+      border-left: 4px solid #667eea;
+      padding-left: 1rem;
+      margin: 1rem 0;
+      color: #6b7280;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="AppBody">
+    <div class="AppContainer">
+      <div x-data="{ activeTab: 'actions', ...transcriptApp() }">
+        <!-- Header Section (White Container) -->
+        <div class="max-w-4xl mx-2 md:mx-auto px-8 pt-6 pb-6 bg-white rounded-xl shadow-sm mb-4">
+          <!-- Title with Status Indicator -->
+          <div class="flex items-center gap-3 mb-2">
+            <h1 class="m-0">Zoom Lens</h1>
+            <div class="flex items-center gap-2 px-3 py-1 border border-gray-300 rounded-full text-xs">
+              <div 
+                class="w-2 h-2 rounded-full"
+                :class="{
+                  'bg-green-500': isConnected,
+                  'bg-yellow-500': !isConnected && transcripts.length > 0,
+                  'bg-gray-400': !isConnected && transcripts.length === 0
+                }"
+                :title="statusText"
+              ></div>
+              <span class="text-gray-600" x-text="statusText"></span>
+              <span class="text-gray-400">•</span>
+              <span class="text-gray-600" x-text="transcripts.length"></span>
+            </div>
+          </div>
+          <p class="text-text-muted text-sm">Your AI-powered meeting companion that brings clarity to every conversation</p>
+          
+          <!-- Manual Input Field -->
+          <div class="mt-4">
+            <div class="flex gap-2">
+              <input 
+                type="text" 
+                x-model="manualInput"
+                @keydown.enter="sendManualInput"
+                placeholder="Type a message or command (press Enter to send)..."
+                class="flex-1 px-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
+              />
+              <button 
+                @click="sendManualInput"
+                class="px-6 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                :disabled="!manualInput.trim()"
+              >
+                Send
+              </button>
+            </div>
+            <!-- Auto-route toggle -->
+            <div class="flex flex-col gap-2 mt-2">
+              <div class="flex items-center gap-2">
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    x-model="micEnabled"
+                    class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span class="text-xs text-gray-600">Mic (process incoming transcripts)</span>
+                </label>
+                <span 
+                  class="text-xs px-2 py-0.5 rounded-full"
+                  :class="micEnabled ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'"
+                >
+                  <span x-show="micEnabled">ON</span>
+                  <span x-show="!micEnabled">OFF</span>
+                </span>
+              </div>
+              
+              <div class="flex items-center gap-2">
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    x-model="requireHeyZoom"
+                    class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span class="text-xs text-gray-600">Require "Hey Zoom" to trigger actions</span>
+                </label>
+                <span 
+                  class="text-xs px-2 py-0.5 rounded-full"
+                  :class="requireHeyZoom ? 'bg-gray-100 text-gray-600' : 'bg-blue-100 text-blue-700'"
+                >
+                  <span x-show="requireHeyZoom">REQUIRED</span>
+                  <span x-show="!requireHeyZoom">AUTO</span>
+                </span>
+              </div>
+              
+              <div class="flex items-center gap-2">
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    x-model="discoveryMode"
+                    class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span class="text-xs text-gray-600">Discovery Mode (background analysis & insights)</span>
+                </label>
+                <span 
+                  class="text-xs px-2 py-0.5 rounded-full"
+                  :class="discoveryMode ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'"
+                  x-text="discoveryMode ? 'ON' : 'OFF'"
+                ></span>
+              </div>
+              
+              <div class="flex items-center gap-2">
+                <label class="text-xs text-gray-600">Wait time:</label>
+                <input 
+                  type="range" 
+                  x-model="debounceDelay"
+                  min="500"
+                  max="5000"
+                  step="500"
+                  class="w-24 h-2"
+                />
+                <span class="text-xs text-gray-600 min-w-[3rem]" x-text="(debounceDelay / 1000).toFixed(1) + 's'"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Tab Navigation (On Background) -->
+        <div class="max-w-4xl mx-2 md:mx-auto mb-4">
+          <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2 overflow-x-auto flex-nowrap scrollbar-hide" style="-webkit-overflow-scrolling: touch;">
+            <button 
+              @click="activeTab = 'discover'"
+              class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors whitespace-nowrap flex-shrink-0"
+              :class="activeTab === 'discover' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 hover:bg-gray-100 '"
+            >
+              Discover Feed
+            </button>
+            <button 
+              @click="activeTab = 'actions'"
+              class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors whitespace-nowrap flex-shrink-0"
+              :class="activeTab === 'actions' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 hover:bg-gray-100 hover:border-gray-400'"
+            >
+              Action Feed
+            </button>
+            <button 
+              @click="activeTab = 'transcripts'"
+              class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors whitespace-nowrap flex-shrink-0"
+              :class="activeTab === 'transcripts' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 hover:bg-gray-100 hover:border-gray-400'"
+            >
+              Transcripts
+            </button>
+            <button 
+              @click="activeTab = 'tools'" 
+              class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors whitespace-nowrap flex-shrink-0" 
+              :class="activeTab === 'tools' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 hover:bg-gray-100 hover:border-gray-400'"
+            >
+              Tools
+            </button>
+          </div>
+            <button 
+              @click="clearTranscripts" 
+              class="px-3 py-1 text-xs text-red-600 hover:text-red-700 border border-red-300 hover:border-red-400 rounded-full transition-colors bg-white hover:bg-red-50 font-medium whitespace-nowrap flex-shrink-0"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <!-- Discover Feed (Discovery Mode Insights) -->
+        <div class="max-w-4xl mx-2 md:mx-auto" x-show="activeTab === 'discover'">
+          <div class="mb-4">
+            <h3 class="font-semibold text-primary mb-1">Discover Feed</h3>
+            <p class="text-sm text-text-muted">AI-powered background insights and context automatically discovered from your conversation.</p>
+          </div>
+          <div x-show="!transcripts.some(t => t.user_id === 'discovery-ai')" class="p-8 text-center text-text-muted">
+            <div class="text-4xl mb-3 opacity-50">🔮</div>
+            <p class="font-medium text-gray-700">Discovery Mode</p>
+            <p class="text-xs mt-1" x-show="!discoveryMode">Enable Discovery Mode to automatically analyze conversations and provide background insights.</p>
+            <p class="text-xs mt-1" x-show="discoveryMode">Discovery insights will appear here as the conversation progresses.</p>
+            <p class="text-xs mt-2 text-gray-500">Background analysis uses available tools to enrich your conversation</p>
+          </div>
+          <div>
+              <template x-for="(t, i) in transcripts.filter(t => t.user_id === 'discovery-ai')" :key="i">
+                <div>
+                  <!-- Processing messages: subtle, no container (only show if actively processing) -->
+                  <div x-show="t.processing" class="max-w-4xl mx-2 md:mx-auto py-2 mb-2">
+                    <div class="text-sm text-gray-500 flex items-center gap-2">
+                      <span class="animate-pulse">🔍</span>
+                      <span x-text="t.data"></span>
+                    </div>
+                  </div>
+                  
+                  <div x-show="!t.processing" class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
+                    <!-- Delete button (appears on hover) -->
+                    <button 
+                      @click="deleteMessage(i, t)"
+                      class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-red-50 rounded"
+                      title="Delete this message"
+                    >
+                      <svg class="w-3.5 h-3.5 text-gray-400 hover:text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                      </svg>
+                    </button>
+                    
+                  <!-- Time Column -->
+                  <div class="text-xs text-gray-500 text-right pt-1">
+                    <span x-text="new Date(t.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})"></span>
+                  </div>
+                  
+                  <!-- Content Column -->
+                  <div class="min-w-0">
+                    <!-- User name and badges -->
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="font-semibold text-blue-600 text-sm">Discovery</span>
+                      <span x-show="t.tools?.length"
+                            class="badge badge-tool"
+                            x-text="[...new Set((t.tools || []).map(tool => getToolDisplayName(tool.name)))].join(', ')"></span>
+                    </div>
+                    
+                    <!-- Message content -->
+                    <div class="text-sm leading-relaxed markdown-content overflow-x-auto">
+                      <span x-html="formatAssistantResponse(t)"></span>
+                    </div>
+                    
+                    <!-- Citations for Discovery -->
+                    <div x-show="t.citations && t.citations.length > 0" class="mt-3 pt-3 border-t border-blue-200">
+                      <div class="text-xs text-gray-500 font-medium mb-2">Sources:</div>
+                      <template x-for="(citation, idx) in (t.citations || []).slice(0, 5)" :key="idx">
+                        <div class="text-xs text-gray-400 mb-2">
+                          <a :href="citation.url" target="_blank" class="hover:text-blue-600 hover:underline flex items-start gap-1">
+                            <span class="opacity-60" x-text="(idx + 1) + '.'"></span>
+                            <div class="flex-1">
+                              <div class="font-medium" x-text="citation.title"></div>
+                              <div class="text-gray-400 text-xs mt-0.5" x-show="citation.content" x-text="citation.content"></div>
+                            </div>
+                          </a>
+                        </div>
+                      </template>
+                    </div>
+                    
+                    <!-- Routing info -->
+                    <div x-show="t.routing?.reasoning" class="text-xs text-gray-500 mt-2 opacity-70">
+                      <span x-text="'' + (t.routing?.reasoning || '')"></span>
+                    </div>
+                  </div>
+                  </div>
+                </div>
+              </template>
+          </div>
+        </div>
+
+        <!-- Actions & Results Feed (AI Responses Only) -->
+        <div class="max-w-4xl mx-2 md:mx-auto" x-show="activeTab === 'actions'">
+          <div class="mb-4">
+            <h3 class="font-semibold text-primary mb-1">Action Feed</h3>
+            <p class="text-sm text-text-muted">Assistant responses and tool results from your "Hey Zoom" requests.</p>
+          </div>
+          <div x-show="!transcripts.some(t => t.user_id === 'groq-ai' || t.user_id === 'system')" class="p-8 text-center text-text-muted">
+            <div class="text-4xl mb-3 opacity-50">🤖</div>
+            <p class="font-medium text-gray-700">Zoom Lens is ready</p>
+            <p class="text-xs mt-1">Start a Zoom meeting to begin. Say "Hey Zoom" to activate the assistant.</p>
+            <p class="text-xs mt-2 text-gray-500">Actions will appear here</p>
+          </div>
+          <div>
+              <template x-for="(t, i) in transcripts.filter(t => t.user_id === 'groq-ai' || t.user_id === 'system')" :key="i">
+                <div>
+                  <!-- Processing messages and regular AI responses: same full container format -->
+                  <div x-show="t.user_id === 'groq-ai'" class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
+                    <!-- Delete button (appears on hover) -->
+                    <button 
+                      @click="deleteMessage(i, t)"
+                      class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-red-50 rounded"
+                      title="Delete this message"
+                    >
+                      <svg class="w-3.5 h-3.5 text-gray-400 hover:text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                      </svg>
+                    </button>
+                    
+                  <!-- Time Column -->
+                  <div class="text-xs text-gray-500 text-right pt-1">
+                    <span x-text="new Date(t.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})"></span>
+                  </div>
+                  
+                  <!-- Content Column -->
+                  <div class="min-w-0">
+                    <!-- User name and badges -->
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="font-semibold text-primary text-sm" x-text="t.user_id === 'system' ? 'System' : 'Groq AI Assistant'"></span>
+                      <span class="text-xs text-gray-500" x-text="'(' + (t.user_id || '?') + ')'"></span>
+                      <span x-show="t.tools?.length"
+                            class="badge badge-tool"
+                            x-text="[...new Set((t.tools || []).map(tool => getToolDisplayName(tool.name)))].join(', ')"></span>
+                    </div>
+                    
+                    <!-- Message content -->
+                    <div class="text-sm leading-relaxed markdown-content overflow-x-auto">
+                      <span x-html="formatAssistantResponse(t)"></span>
+                    </div>
+                    
+                    <!-- Citations for Actions -->
+                    <div x-show="t.citations && t.citations.length > 0" class="mt-3 pt-3 border-t border-gray-200">
+                      <div class="text-xs text-gray-500 font-medium mb-2">Sources:</div>
+                      <template x-for="(citation, idx) in (t.citations || []).slice(0, 5)" :key="idx">
+                        <div class="text-xs text-gray-400 mb-2">
+                          <a :href="citation.url" target="_blank" class="hover:text-blue-600 hover:underline flex items-start gap-1">
+                            <span class="opacity-60" x-text="(idx + 1) + '.'"></span>
+                            <div class="flex-1">
+                              <div class="font-medium" x-text="citation.title"></div>
+                              <div class="text-gray-400 text-xs mt-0.5" x-show="citation.content" x-text="citation.content"></div>
+                            </div>
+                          </a>
+                        </div>
+                      </template>
+                    </div>
+                    
+                    <!-- Routing info -->
+                    <div x-show="t.routing?.reasoning" class="text-xs text-gray-500 mt-2 opacity-70">
+                      <span x-text="'' + (t.routing?.reasoning || '')"></span>
+                    </div>
+                  </div>
+                  </div>
+                </div>
+              </template>
+          </div>
+        </div>
+
+        <!-- MCP Tools Drawer -->
+        <div class="max-w-4xl mx-2 md:mx-auto" x-show="activeTab === 'tools'">
+          <div class="mb-4">
+            <h3 class="font-semibold text-primary mb-1">Available Tools</h3>
+            <p class="text-sm text-text-muted">MCP-powered tools for web search, weather, AI models, and more. Test each tool or say "Hey Zoom" + your request to use them automatically.</p>
+          </div>
+          
+          <!-- Tool Cards -->
+          <div class="space-y-2">
+            
+            <!-- Weather Tool -->
+            <div class="tool-card max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
+              <div class="tool-header-static">
+                <span class="text-2xl">🌤️</span>
+                <span class="font-semibold text-sm">Weather</span>
+                <button @click="injectWeatherQuery" class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors bg-white text-gray-700 hover:bg-gray-100 hover:border-gray-400 pointer-cursor">
+                  Test
+                </button>
+              </div>
+              <div class="tool-content">
+                <p class="text-xs text-text-muted mb-2">Uses Groq Compound AI to fetch current weather conditions</p>
+                <div class="text-xs text-gray-500">
+                  <strong>Trigger:</strong> "Hey Zoom, what's the weather in [location]?"
+                </div>
+              </div>
+            </div>
+
+            <!-- Groq Compound Tool -->
+            <div class="tool-card max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
+              <div class="tool-header-static">
+                <span class="text-2xl">⚡</span>
+                <span class="font-semibold text-sm">Groq Compound</span>
+                <button @click="injectGroqCompoundQuery" class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors bg-white text-gray-700 hover:bg-gray-100 hover:border-gray-400 pointer-cursor">
+                  Test
+                </button>
+              </div>
+              <div class="tool-content">
+                <p class="text-xs text-text-muted mb-2">FAST lightweight web search and code execution - instantly searches the web or runs calculations. Preferred for quick searches and Discovery Mode.</p>
+                <div class="text-xs text-gray-500">
+                  <strong>Trigger:</strong> "Hey Zoom, search for [topic]" or "Hey Zoom, calculate [math]"
+                </div>
+              </div>
+            </div>
+
+            <!-- HuggingFace Tool -->
+            <div class="tool-card max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
+              <div class="tool-header-static">
+                <span class="text-2xl">🤗</span>
+                <span class="font-semibold text-sm">HuggingFace</span>
+                <button @click="injectHuggingFaceQuery" class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors bg-white text-gray-700 hover:bg-gray-100 hover:border-gray-400 pointer-cursor">
+                  Test
+                </button>
+              </div>
+              <div class="tool-content">
+                <p class="text-xs text-text-muted mb-2">MCP tool to search AI models and datasets on Hugging Face</p>
+                <div class="text-xs text-gray-500">
+                  <strong>Trigger:</strong> "Hey Zoom, find [model type] on Hugging Face"
+                </div>
+              </div>
+            </div>
+
+            <!-- Web Search Tool (Parallel) -->
+            <div class="tool-card max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
+              <div class="tool-header-static">
+                <span class="text-2xl">🔍</span>
+                <span class="font-semibold text-sm">Parallel Search</span>
+                <button @click="injectParallelQuery" class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors bg-white text-gray-700 hover:bg-gray-100 hover:border-gray-400 pointer-cursor">
+                  Test
+                </button>
+              </div>
+              <div class="tool-content">
+                <p class="text-xs text-text-muted mb-2">Deep multi-source web search - more comprehensive but slower than Groq Compound. Use for complex research queries.</p>
+                <div class="text-xs text-gray-500">
+                  <strong>Trigger:</strong> "Hey Zoom, do a deep search for [topic]"
+                </div>
+              </div>
+            </div>
+
+            <!-- General Q&A Tool -->
+            <div class="tool-card max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
+              <div class="tool-header-static">
+                <span class="text-2xl">💭</span>
+                <span class="font-semibold text-sm">General Q&A</span>
+                <button @click="injectGeneralQuery" class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors bg-white text-gray-700 hover:bg-gray-100 hover:border-gray-400 pointer-cursor">
+                  Test
+                </button>
+              </div>
+              <div class="tool-content">
+                <p class="text-xs text-text-muted mb-2">Direct AI response using knowledge without external tools</p>
+                <div class="text-xs text-gray-500">
+                  <strong>Trigger:</strong> "Hey Zoom, explain [concept]"
+                </div>
+              </div>
+            </div>
+
+            <!-- Salesforce Tool -->
+            <div class="tool-card max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2" x-data="{ configExpanded: false, ...salesforceConfig() }">
+              <div class="tool-header-static">
+                <span class="text-2xl">☁️</span>
+                <span class="font-semibold text-sm">Salesforce</span>
+                <span x-show="isConfigured" class="text-green-600 text-xs ml-2">✓</span>
+                <div class="ml-auto flex gap-2">
+                  <button 
+                    @click="configExpanded = !configExpanded" 
+                    class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors bg-white text-gray-700 hover:bg-gray-100 hover:border-gray-400 pointer-cursor"
+                  >
+                    Configure
+                  </button>
+                  <button 
+                    @click="isConfigured ? injectSalesforceQuery() : null" 
+                    :disabled="!isConfigured"
+                    class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors bg-white text-gray-700 hover:bg-gray-100 hover:border-gray-400 pointer-cursor"
+                    :class="!isConfigured ? 'opacity-50 cursor-not-allowed' : ''"
+                  >
+                    Test
+                  </button>
+                </div>
+              </div>
+              <div class="tool-content">
+                <p class="text-xs text-text-muted mb-2">MCP tool to search leads and manage Salesforce CRM data</p>
+                <div class="text-xs text-gray-500 mb-2">
+                  <strong>Trigger:</strong> "Hey Zoom, search leads in Salesforce"
+                </div>
+                
+                <!-- Salesforce Configuration (Compact) -->
+                <div x-show="configExpanded" x-transition class="space-y-2 mt-2">
+                  <div x-show="!isConfigured" class="space-y-2 p-4 bg-gray-100 rounded-xl">
+                    <button 
+                      @click="startOAuthFlow"
+                      :disabled="loggingIn"
+                      class="w-full bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+                    >
+                      <span x-show="!loggingIn">Sign in with Salesforce</span>
+                      <span x-show="loggingIn">Opening...</span>
+                    </button>
+                    <div class="relative">
+                      <input 
+                        type="text"
+                        x-model="credentialsJson"
+                        @input="parseAndSaveCredentials"
+                        placeholder='Paste JSON credentials here'
+                        class="w-full px-3 py-2 text-xs font-mono bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <div x-show="saving" class="absolute right-2 top-1.5 text-blue-600">
+                        <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      </div>
+                      <div x-show="savedSuccessfully" class="absolute right-2 top-1.5 text-green-600">✓</div>
+                    </div>
+                    <p class="text-xs text-gray-500">OAuth → Copy JSON from popup → Paste above</p>
+                  </div>
+
+                  <div x-show="isConfigured" class="p-3 bg-green-50 rounded-xl text-xs shadow-sm">
+                    <div class="flex items-center justify-between mb-1">
+                      <span class="text-green-700 font-medium">✓ Connected</span>
+                      <button @click="clearCredentials" class="text-white text-xs">Disconnect</button>
+                    </div>
+                    <div class="text-gray-600 text-xs truncate" x-text="instanceUrl"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Add MCP Tool Button -->
+            <div class="mt-4 max-w-4xl mx-2 md:mx-auto" x-data="customMcpTools()">
+              <button 
+                @click="addNewTool" 
+                class="w-full py-4 mb-2 text-sm text-gray-600 hover:text-gray-800 rounded-[3rem] transition-colors bg-white hover:bg-gray-100 border border-transparent hover:border-gray-200"
+              >
+                + Add Custom MCP Tool
+              </button>
+
+              <!-- Custom MCP Tools List -->
+              <template x-for="(tool, index) in customTools" :key="index">
+                <div class="tool-card max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
+                  <div class="tool-header-static">
+                    <span class="text-2xl" x-text="tool.emoji || '⚙️'"></span>
+                    <span class="font-semibold text-sm" x-text="tool.name || 'Custom Tool'"></span>
+                    <span x-show="tool.configured" class="text-green-600 text-xs ml-2">✓</span>
+                    <div class="ml-auto flex gap-2">
+                      <button 
+                        @click="tool.configExpanded = !tool.configExpanded" 
+                        class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors bg-white text-gray-700 hover:bg-gray-100 hover:border-gray-400 pointer-cursor"
+                      >
+                        Configure
+                      </button>
+                      <button 
+                        @click="testCustomTool(index)" 
+                        :disabled="!tool.configured"
+                        class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors bg-white text-gray-700 hover:bg-gray-100 hover:border-gray-400 pointer-cursor"
+                        :class="!tool.configured ? 'opacity-50 cursor-not-allowed' : ''"
+                      >
+                        Test
+                      </button>
+                      <button 
+                        @click="removeTool(index)" 
+                        class="px-3 py-1 text-xs border border-red-300 rounded-full font-medium transition-colors bg-white text-red-600 hover:bg-red-50 hover:border-red-400"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                  <div class="tool-content">
+                    <p class="text-xs text-text-muted mb-2" x-text="tool.description || 'Custom MCP tool'"></p>
+                    <div class="text-xs text-gray-500 mb-2" x-show="tool.trigger">
+                      <strong>Trigger:</strong> <span x-text="tool.trigger"></span>
+                    </div>
+                    
+                    <!-- Configuration Form -->
+                    <div x-show="tool.configExpanded" x-transition class="space-y-4 mt-2 p-4 bg-gray-100 rounded-xl">
+                      <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Tool Name</label>
+                        <input 
+                          type="text"
+                          x-model="tool.name"
+                          placeholder="e.g., GitHub MCP"
+                          class="w-full px-3 py-2 text-xs bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">MCP Server URL</label>
+                        <input 
+                          type="text"
+                          x-model="tool.serverUrl"
+                          placeholder="https://example.com/mcp"
+                          class="w-full px-3 py-2 text-xs bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                        <input 
+                          type="text"
+                          x-model="tool.description"
+                          placeholder="What does this tool do?"
+                          class="w-full px-3 py-2 text-xs bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Trigger Phrase</label>
+                        <input 
+                          type="text"
+                          x-model="tool.trigger"
+                          placeholder='e.g., "Hey Zoom, check GitHub issues"'
+                          class="w-full px-3 py-2 text-xs bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Emoji Icon (optional)</label>
+                        <input 
+                          type="text"
+                          x-model="tool.emoji"
+                          placeholder="🔧"
+                          maxlength="2"
+                          class="w-full px-3 py-2 text-xs bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Headers (optional)</label>
+                        <div class="space-y-2">
+                          <template x-for="(header, hIndex) in (tool.headers || [])" :key="hIndex">
+                            <div class="flex gap-2">
+                              <input 
+                                type="text"
+                                x-model="header.name"
+                                placeholder="Header name"
+                                class="w-full px-3 py-2 text-xs bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                              <input 
+                                type="text"
+                                x-model="header.value"
+                                placeholder="Header value"
+                                class="w-full px-3 py-2 text-xs bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                              <button 
+                                @click="removeHeader(index, hIndex)"
+                                class="px-3 py-2 text-xs text-red-600 hover:text-red-700 bg-transparent"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </template>
+                          <button 
+                            @click="addHeader(index)"
+                            class="w-full py-2 text-xs text-gray-600 hover:text-gray-800 bg-white hover:bg-gray-100 rounded-xl transition-colors shadow-sm"
+                          >
+                            + Add Header
+                          </button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2 mb-4">Add authentication headers like Authorization, API-Key, etc.</p>
+                      </div>
+                      
+                      <button 
+                        @click="saveTool(index)"
+                        class="w-full bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-medium hover:bg-blue-700 transition-colors shadow-sm"
+                      >
+                        Save Configuration
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Conversation History -->
+        <div class="max-w-4xl mx-2 md:mx-auto" x-show="activeTab === 'transcripts'">
+          <div class="mb-4">
+            <h3 class="font-semibold text-primary mb-1">Transcripts</h3>
+            <p class="text-sm text-text-muted">Full conversation history with all participants.</p>
+          </div>
+          <div x-show="!transcripts.filter(t => t.user_id !== 'discovery-ai').length" class="p-6 text-center text-text-muted">
+            <p class="text-sm text-gray-500">Conversation transcripts will appear here</p>
+          </div>
+          <div>
+              <template x-for="(t, i) in transcripts.filter(t => t.user_id !== 'discovery-ai')" :key="i">
+                <div class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-3 bg-white rounded-xl shadow-sm mb-2">
+                  <!-- Delete button (appears on hover) -->
+                  <button 
+                    @click="deleteTranscript(i)"
+                    class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-red-50 rounded"
+                    title="Delete this message"
+                  >
+                    <svg class="w-3.5 h-3.5 text-gray-400 hover:text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                  </button>
+                  
+                  <!-- Time Column -->
+                  <div class="text-xs text-gray-500 text-right pt-1">
+                    <span x-text="new Date(t.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})"></span>
+                  </div>
+                  
+                  <!-- Content Column -->
+                  <div class="min-w-0">
+                    <!-- User name and badges -->
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="font-semibold text-primary text-sm" x-text="t.user_name || 'unknown'"></span>
+                      <span class="text-xs text-gray-500" x-text="'(' + (t.user_id || '?') + ')'"></span>
+                      <span x-show="t.user_id === 'groq-ai' && t.tools?.length"
+                            class="badge badge-tool"
+                            x-text="[...new Set((t.tools || []).map(tool => getToolDisplayName(tool.name)))].join(', ')"></span>
+                      <span x-show="t.corrected" class="text-success text-xs opacity-70" title="Text corrected">✏️</span>
+                    </div>
+                    
+                    <!-- Message content -->
+                    <div class="text-sm leading-relaxed markdown-content overflow-x-auto">
+                      <span x-html="formatAssistantResponse(t)"></span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function customMcpTools() {
+      return {
+        customTools: [],
+        
+        init() {
+          this.loadTools();
+        },
+        
+        loadTools() {
+          try {
+            const saved = localStorage.getItem('custom-mcp-tools');
+            if (saved) {
+              this.customTools = JSON.parse(saved);
+            }
+          } catch (e) {
+            console.error('Error loading custom tools:', e);
+          }
+        },
+        
+        saveTools() {
+          try {
+            localStorage.setItem('custom-mcp-tools', JSON.stringify(this.customTools));
+          } catch (e) {
+            console.error('Error saving custom tools:', e);
+          }
+        },
+        
+        addNewTool() {
+          this.customTools.push({
+            name: '',
+            serverUrl: '',
+            description: '',
+            trigger: '',
+            emoji: '⚙️',
+            headers: [],
+            configured: false,
+            configExpanded: true
+          });
+          this.saveTools();
+        },
+        
+        addHeader(toolIndex) {
+          const tool = this.customTools[toolIndex];
+          if (!tool.headers) {
+            tool.headers = [];
+          }
+          tool.headers.push({ name: '', value: '' });
+          this.saveTools();
+        },
+        
+        removeHeader(toolIndex, headerIndex) {
+          const tool = this.customTools[toolIndex];
+          if (tool.headers) {
+            tool.headers.splice(headerIndex, 1);
+            this.saveTools();
+          }
+        },
+        
+        removeTool(index) {
+          if (confirm('Are you sure you want to remove this custom MCP tool?')) {
+            this.customTools.splice(index, 1);
+            this.saveTools();
+          }
+        },
+        
+        saveTool(index) {
+          const tool = this.customTools[index];
+          
+          if (!tool.name || !tool.serverUrl) {
+            alert('Please provide at least a name and server URL');
+            return;
+          }
+          
+          tool.configured = true;
+          tool.configExpanded = false;
+          this.saveTools();
+          
+          console.log('Custom MCP tool saved:', tool);
+        },
+        
+        testCustomTool(index) {
+          const tool = this.customTools[index];
+          
+          if (!tool.configured) {
+            alert('Please configure this tool first');
+            return;
+          }
+          
+          // Create a test query using the trigger phrase or a generic one
+          const testQuery = tool.trigger || `Hey Zoom, test ${tool.name}`;
+          
+          // Find the transcript app and inject the query with custom MCP info
+          const transcriptAppElement = document.querySelector('.App');
+          let app = null;
+          
+          if (transcriptAppElement && transcriptAppElement._x_dataStack) {
+            app = transcriptAppElement._x_dataStack[0];
+          }
+          
+          if (app && typeof app.checkForZoomTrigger === 'function') {
+            const testTranscript = {
+              user_id: 'custom-test',
+              user_name: 'Test User',
+              data: testQuery,
+              original_data: testQuery,
+              timestamp: Date.now(),
+              customMcp: {
+                id: `custom_${tool.name.toLowerCase().replace(/\s+/g, '_')}`,
+                name: tool.name,
+                serverUrl: tool.serverUrl,
+                description: tool.description,
+                headers: tool.headers || []
+              }
+            };
+            
+            app.transcripts.unshift(testTranscript);
+            app.saveTranscripts();
+            app.checkForZoomTrigger(testTranscript);
+            console.log('Testing custom MCP tool:', tool.name, 'with config:', testTranscript.customMcp);
+          } else {
+            console.error('Could not find transcript app');
+          }
+        },
+        
+        getCustomMcpConfigs() {
+          // Return all configured custom MCPs for the backend
+          return this.customTools
+            .filter(tool => tool.configured && tool.serverUrl)
+            .map(tool => ({
+              id: `custom_${tool.name.toLowerCase().replace(/\s+/g, '_')}`,
+              name: tool.name,
+              serverUrl: tool.serverUrl,
+              description: tool.description || 'Custom MCP tool',
+              headers: (tool.headers || []).reduce((acc, h) => {
+                if (h.name && h.value) {
+                  acc[h.name] = h.value;
+                }
+                return acc;
+              }, {})
+            }));
+        }
+      };
+    }
+
+    function salesforceConfig() {
+      return {
+        isConfigured: false,
+        credentialsJson: '',
+        accessToken: '',
+        instanceUrl: '',
+        state: '',
+        sessionId: null,
+        mcpServerUrl: '',
+        saving: false,
+        savedSuccessfully: false,
+        loggingIn: false,
+        oauthWindow: null,
+
+        async init() {
+          await this.checkStatus();
+          
+          // Listen for OAuth completion messages
+          window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'salesforce-connected') {
+              this.handleOAuthSuccess(event.data);
+            }
+          });
+        },
+
+        async checkStatus() {
+          try {
+            const response = await fetch('/api/salesforce/status');
+            const data = await response.json();
+            
+            this.isConfigured = data.configured;
+            this.sessionId = data.sessionId;
+            this.mcpServerUrl = data.mcpServerUrl;
+            
+            // Load saved instance URL from localStorage for display
+            if (this.isConfigured) {
+              const saved = localStorage.getItem('salesforce-instance-url');
+              if (saved) {
+                this.instanceUrl = saved;
+              }
+            }
+          } catch (error) {
+            console.error('Error checking Salesforce status:', error);
+          }
+        },
+
+        async startOAuthFlow() {
+          this.loggingIn = true;
+          
+          try {
+            // Open the MCP wrapper's login page directly
+            // The wrapper will handle the OAuth flow and show credentials
+            const loginUrl = `${this.mcpServerUrl}/login`;
+            
+            console.log('Opening Salesforce MCP login page:', loginUrl);
+            
+            // Open MCP wrapper login page in a popup
+            const width = 800;
+            const height = 700;
+            const left = window.screenX + (window.outerWidth - width) / 2;
+            const top = window.screenY + (window.outerHeight - height) / 2;
+            
+            this.oauthWindow = window.open(
+              loginUrl,
+              'salesforce-oauth',
+              `width=${width},height=${height},left=${left},top=${top},popup=1,toolbar=0,menubar=0,location=0,status=0`
+            );
+            
+            // Check if popup was blocked
+            if (!this.oauthWindow || this.oauthWindow.closed) {
+              throw new Error('Popup blocked. Please allow popups for this site and try again.');
+            }
+            
+            this.loggingIn = false;
+            
+          } catch (error) {
+            console.error('Error starting OAuth flow:', error);
+            this.loggingIn = false;
+          }
+        },
+
+        parseCredentials() {
+          try {
+            const creds = JSON.parse(this.credentialsJson);
+            this.accessToken = creds.access_token || '';
+            this.instanceUrl = creds.instance_url || '';
+            this.state = creds.state || '';
+          } catch (error) {
+            // Invalid JSON, just ignore for now
+            console.log('Invalid JSON, waiting for more input...');
+          }
+        },
+
+        async parseAndSaveCredentials() {
+          // Reset success state
+          this.savedSuccessfully = false;
+          
+          try {
+            const creds = JSON.parse(this.credentialsJson);
+            this.accessToken = creds.access_token || '';
+            this.instanceUrl = creds.instance_url || '';
+            this.state = creds.state || '';
+            
+            // If valid JSON with required fields, auto-save
+            if (this.accessToken && this.instanceUrl) {
+              await this.saveCredentials();
+            }
+          } catch (error) {
+            // Invalid JSON, just ignore for now
+            console.log('Invalid JSON, waiting for more input...');
+          }
+        },
+
+        handleOAuthSuccess(data) {
+          console.log('OAuth success:', data);
+          this.isConfigured = true;
+          this.sessionId = data.sessionId;
+          this.instanceUrl = data.instanceUrl;
+          
+          // Save instance URL to localStorage
+          localStorage.setItem('salesforce-instance-url', data.instanceUrl);
+          
+          this.loggingIn = false;
+        },
+
+        async saveCredentials() {
+          if (!this.accessToken || !this.instanceUrl) {
+            console.error('Missing credentials - please paste valid JSON');
+            return;
+          }
+
+          this.saving = true;
+          this.savedSuccessfully = false;
+
+          try {
+            // Save credentials to localStorage for use in API requests
+            // This solves the Deno Deploy serverless issue where in-memory storage doesn't persist
+            const credentials = {
+              access_token: this.accessToken,
+              instance_url: this.instanceUrl,
+              state: this.state || `session_${Date.now()}`
+            };
+            localStorage.setItem('salesforce-credentials', JSON.stringify(credentials));
+            console.log('💾 Saved Salesforce credentials to localStorage');
+
+            // Also send to backend for in-memory storage (for localhost compatibility)
+            const response = await fetch('/api/salesforce/credentials', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(credentials)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+              this.isConfigured = true;
+              this.sessionId = result.sessionId;
+              
+              // Save instance URL to localStorage for display
+              localStorage.setItem('salesforce-instance-url', this.instanceUrl);
+              
+              // Show success checkmark
+              this.savedSuccessfully = true;
+              
+              // Clear sensitive data from form after a delay
+              setTimeout(() => {
+                this.accessToken = '';
+                this.state = '';
+                this.credentialsJson = '';
+                this.savedSuccessfully = false;
+              }, 1500);
+            } else {
+              console.error('Failed to save credentials:', result.error);
+            }
+          } catch (error) {
+            console.error('Error saving Salesforce credentials:', error);
+          } finally {
+            this.saving = false;
+          }
+        },
+
+        async clearCredentials() {
+          if (!confirm('Are you sure you want to clear Salesforce credentials?')) {
+            return;
+          }
+
+          try {
+            // Clear localStorage first
+            localStorage.removeItem('salesforce-credentials');
+            localStorage.removeItem('salesforce-instance-url');
+            console.log('🗑️ Cleared Salesforce credentials from localStorage');
+
+            // Also clear from backend in-memory storage
+            const response = await fetch('/api/salesforce/credentials', {
+              method: 'DELETE'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+              this.isConfigured = false;
+              this.sessionId = null;
+              this.accessToken = '';
+              this.instanceUrl = '';
+              this.state = '';
+              this.credentialsJson = '';
+            }
+          } catch (error) {
+            console.error('Error clearing Salesforce credentials:', error);
+          }
+        },
+
+        testSalesforceQuery() {
+          console.log('🧪 Testing Salesforce query...');
+          
+          // Inject a test Salesforce query into the transcript app
+          const testQuery = "Hey Zoom, check the latest 10 leads in Salesforce";
+          
+          // Find the transcript app element
+          const transcriptAppElement = document.querySelector('.App');
+          console.log('Found transcript app element:', !!transcriptAppElement);
+          
+          // Try multiple ways to access Alpine data
+          let app = null;
+          
+          // Method 1: Try __x property (Alpine 3.x)
+          if (transcriptAppElement && transcriptAppElement._x_dataStack) {
+            app = transcriptAppElement._x_dataStack[0];
+            console.log('Method 1: Found via _x_dataStack');
+          }
+          
+          // Method 2: Try direct __x property
+          if (!app && transcriptAppElement && transcriptAppElement.__x) {
+            app = transcriptAppElement.__x.$data;
+            console.log('Method 2: Found via __x.$data');
+          }
+          
+          // Method 3: Use Alpine.$data() if available
+          if (!app && typeof Alpine !== 'undefined' && transcriptAppElement) {
+            app = Alpine.$data(transcriptAppElement);
+            console.log('Method 3: Found via Alpine.$data()');
+          }
+          
+          if (app && typeof app.checkForZoomTrigger === 'function') {
+            const sfTranscript = {
+              user_id: 'sf-test',
+              user_name: 'Sales Manager',
+              data: testQuery,
+              original_data: testQuery, // IMPORTANT: sendTriggerRequest needs this field
+              timestamp: Date.now()
+            };
+            
+            console.log('Injecting transcript:', sfTranscript);
+            app.transcripts.unshift(sfTranscript);
+            app.saveTranscripts();
+            app.checkForZoomTrigger(sfTranscript);
+            console.log('✅ Test query injected successfully');
+          } else {
+            console.error('❌ Could not find transcript app or checkForZoomTrigger function');
+            console.log('App object:', app);
+          }
+        }
+      };
+    }
+
+    function transcriptApp() {
+      return {
+        transcripts: [],
+        isConnected: false,
+        statusText: 'Connecting...',
+        eventSource: null,
+        processingCount: 0,
+        manualInput: '',
+        micEnabled: true, // Toggle for processing incoming transcripts (mic on/off)
+        requireHeyZoom: true, // Toggle for requiring "Hey Zoom" trigger (defaults to true)
+        discoveryMode: false, // Toggle for Discovery Mode
+        discoveryDebounceTimer: null, // Timer for debouncing discovery requests
+        lastDiscoveryTranscriptCount: 0, // Track when we last ran discovery
+        triggerDebounceTimer: null, // Timer for debouncing trigger requests
+        pendingTranscripts: [], // Store all pending transcripts during debounce period
+        debounceDelay: 1500, // Wait 1.5 seconds after last transcript before processing
+
+        init() {
+          this.loadStoredTranscripts();
+          this.connectSSE();
+          this.loadMicSettings();
+          this.loadRequireHeyZoomSettings();
+          this.loadDiscoverySettings();
+          this.loadDebounceSettings();
+          
+          // Watch for changes to micEnabled and save to localStorage
+          this.$watch('micEnabled', (value) => {
+            localStorage.setItem('mic-enabled', value.toString());
+            console.log('🎤 Mic setting changed:', value ? 'ON' : 'OFF');
+            
+            // Cancel any pending trigger if mic is turned off
+            if (!value && this.triggerDebounceTimer) {
+              clearTimeout(this.triggerDebounceTimer);
+              this.triggerDebounceTimer = null;
+              this.pendingTranscripts = [];
+              console.log('🔇 Mic OFF - Cancelled pending triggers');
+            }
+          });
+          
+          // Watch for changes to requireHeyZoom and save to localStorage
+          this.$watch('requireHeyZoom', (value) => {
+            localStorage.setItem('require-hey-zoom', value.toString());
+            console.log('🔄 Require "Hey Zoom" setting changed:', value ? 'REQUIRED' : 'AUTO');
+          });
+          
+          // Watch for changes to discoveryMode and save to localStorage
+          this.$watch('discoveryMode', (value) => {
+            localStorage.setItem('discovery-mode', value.toString());
+            console.log('🔮 Discovery Mode setting changed:', value ? 'ON' : 'OFF');
+          });
+          
+          // Watch for changes to debounceDelay and save to localStorage
+          this.$watch('debounceDelay', (value) => {
+            localStorage.setItem('debounce-delay', value.toString());
+            console.log(`⏱️ Debounce delay changed: ${value}ms (${(value / 1000).toFixed(1)}s)`);
+          });
+          
+          // Watch for transcript changes and trigger discovery if enabled
+          this.$watch('transcripts', () => {
+            if (this.discoveryMode) {
+              this.scheduleDiscoveryAnalysis();
+            }
+          });
+        },
+
+        loadMicSettings() {
+          try {
+            const saved = localStorage.getItem('mic-enabled');
+            if (saved !== null) {
+              this.micEnabled = saved === 'true';
+            }
+          } catch (e) {
+            console.error('Error loading mic settings:', e);
+          }
+        },
+        
+        loadRequireHeyZoomSettings() {
+          try {
+            const saved = localStorage.getItem('require-hey-zoom');
+            if (saved !== null) {
+              this.requireHeyZoom = saved === 'true';
+            }
+          } catch (e) {
+            console.error('Error loading require-hey-zoom settings:', e);
+          }
+        },
+        
+        loadDiscoverySettings() {
+          try {
+            const saved = localStorage.getItem('discovery-mode');
+            if (saved !== null) {
+              this.discoveryMode = saved === 'true';
+            }
+          } catch (e) {
+            console.error('Error loading discovery settings:', e);
+          }
+        },
+        
+        loadDebounceSettings() {
+          try {
+            const saved = localStorage.getItem('debounce-delay');
+            if (saved !== null) {
+              const delay = parseInt(saved, 10);
+              if (!isNaN(delay) && delay >= 500 && delay <= 5000) {
+                this.debounceDelay = delay;
+              }
+            }
+          } catch (e) {
+            console.error('Error loading debounce settings:', e);
+          }
+        },
+        
+        scheduleDiscoveryAnalysis() {
+          // Debounce discovery requests to avoid hammering the API
+          if (this.discoveryDebounceTimer) {
+            clearTimeout(this.discoveryDebounceTimer);
+          }
+          
+          // Only run discovery if we have new user transcripts (not AI responses)
+          const userTranscripts = this.transcripts.filter(t => 
+            t.user_id !== 'groq-ai' && 
+            t.user_id !== 'discovery-ai' && 
+            t.user_id !== 'system'
+          );
+          
+          // Don't run if no user transcripts or no change since last run
+          if (userTranscripts.length === 0 || userTranscripts.length === this.lastDiscoveryTranscriptCount) {
+            return;
+          }
+          
+          // Schedule discovery analysis after a short delay (3 seconds)
+          this.discoveryDebounceTimer = setTimeout(() => {
+            this.runDiscoveryAnalysis();
+          }, 3000);
+        },
+        
+        async runDiscoveryAnalysis() {
+          try {
+            console.log('🔮 Running Discovery Mode analysis...');
+            
+            // Filter to only user transcripts for analysis
+            const userTranscripts = this.transcripts.filter(t => 
+              t.user_id !== 'groq-ai' && 
+              t.user_id !== 'discovery-ai' && 
+              t.user_id !== 'system'
+            );
+            
+            // Update the last count
+            this.lastDiscoveryTranscriptCount = userTranscripts.length;
+            
+            // Don't run if no transcripts
+            if (userTranscripts.length === 0) {
+              return;
+            }
+            
+            // Add a processing indicator
+            const processingMessage = {
+              user_id: 'discovery-ai',
+              user_name: 'Discovery',
+              data: 'Analyzing conversation for insights...',
+              timestamp: Date.now(),
+              processing: true
+            };
+            
+            this.transcripts.unshift(processingMessage);
+            this.saveTranscripts();
+            
+            // Call the discovery API endpoint
+            const response = await fetch('/api/discovery-analysis', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                transcripts: userTranscripts,
+                full_history: this.transcripts
+              })
+            });
+            
+            if (!response.ok) {
+              throw new Error(`HTTP error status: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            // Remove processing indicator
+            const processingIndex = this.transcripts.findIndex(t => 
+              t.user_id === 'discovery-ai' && t.processing
+            );
+            
+            if (processingIndex !== -1) {
+              this.transcripts.splice(processingIndex, 1);
+            }
+            
+            // Add discovery insights if any were generated
+            if (result.insights && result.insights.length > 0) {
+              result.insights.forEach(insight => {
+                const discoveryTranscript = {
+                  user_id: 'discovery-ai',
+                  user_name: 'Discovery',
+                  data: insight.content,
+                  timestamp: Date.now(),
+                  tools: insight.tools || [],
+                  routing: insight.routing,
+                  citations: insight.citations || []
+                };
+                
+                this.transcripts.unshift(discoveryTranscript);
+              });
+              
+              this.saveTranscripts();
+              console.log(`✅ Added ${result.insights.length} discovery insight(s)`);
+            } else {
+              console.log('ℹ️ No new insights discovered');
+            }
+            
+          } catch (error) {
+            console.error('❌ Discovery analysis failed:', error);
+            
+            // Remove processing indicator on error
+            const processingIndex = this.transcripts.findIndex(t => 
+              t.user_id === 'discovery-ai' && t.processing
+            );
+            
+            if (processingIndex !== -1) {
+              this.transcripts.splice(processingIndex, 1);
+            }
+            
+            this.saveTranscripts();
+          }
+        },
+
+        sendManualInput() {
+          const input = this.manualInput.trim();
+          if (!input) return;
+
+          // Clear input immediately for better UX
+          this.manualInput = '';
+
+          // Generate fake user names for variety
+          const fakeUsers = [
+            { name: "You", id: "manual-user" },
+            { name: "Manual User", id: "manual-user-2" },
+            { name: "Test User", id: "test-user" }
+          ];
+
+          const randomUser = fakeUsers[0]; // Default to "You" for clarity
+
+          // Apply spelling correction to the input
+          const correctedData = this.correctZoomSpelling(input);
+          
+          // Create transcript entry
+          const manualTranscript = {
+            user_id: randomUser.id,
+            user_name: randomUser.name,
+            data: correctedData,
+            original_data: input,
+            timestamp: Date.now(),
+            corrected: correctedData !== input
+          };
+
+          // Add to transcripts
+          this.transcripts.unshift(manualTranscript);
+          this.saveTranscripts();
+
+          // If requireHeyZoom is disabled (AUTO mode), schedule processing for all messages
+          // Otherwise (REQUIRED mode), only check for "Hey Zoom" trigger (with debouncing)
+          if (!this.requireHeyZoom) {
+            console.log('🤖 AUTO mode enabled: Scheduling message processing');
+            this.scheduleZoomTrigger(manualTranscript);
+          } else {
+            // Check if it's a Zoom trigger and schedule processing
+            this.checkForZoomTrigger(manualTranscript);
+          }
+
+          console.log('📤 Manual input sent:', input, '| Require "Hey Zoom":', this.requireHeyZoom);
+        },
+
+        loadStoredTranscripts() {
+          try {
+            const stored = localStorage.getItem('zoom-transcripts');
+            if (stored) {
+              this.transcripts = JSON.parse(stored);
+            }
+          } catch (e) {
+            console.error('Error loading stored transcripts:', e);
+          }
+        },
+
+        saveTranscripts() {
+          try {
+            localStorage.setItem('zoom-transcripts', JSON.stringify(this.transcripts));
+          } catch (e) {
+            console.error('Error saving transcripts:', e);
+          }
+        },
+
+        connectSSE() {
+          // Detect if we're running in an embedded environment
+          const isEmbedded = window.parent !== window || window.location !== window.parent.location;
+          const baseUrl = isEmbedded ? window.location.origin : '';
+          const sseUrl = `${baseUrl}/events`;
+          
+          console.log('🔌 [SSE] Attempting to connect to:', sseUrl);
+          console.log('🔌 [SSE] Embedded mode:', isEmbedded);
+          
+          try {
+            this.eventSource = new EventSource(sseUrl);
+            console.log('🔌 [SSE] EventSource created, readyState:', this.eventSource.readyState);
+
+            this.eventSource.addEventListener('open', () => {
+              this.isConnected = true;
+              this.statusText = 'Connected';
+              console.log('✅ [SSE] Connection opened successfully');
+            });
+
+            this.eventSource.addEventListener('error', (error) => {
+              this.isConnected = false;
+              this.statusText = 'Disconnected (retrying...)';
+              console.error('❌ [SSE] Connection error:', error);
+              console.error('❌ [SSE] EventSource readyState:', this.eventSource?.readyState);
+
+              // Retry connection after a delay
+              setTimeout(() => {
+                if (this.eventSource && this.eventSource.readyState === EventSource.CLOSED) {
+                  console.log('🔄 [SSE] Retrying connection...');
+                  this.connectSSE();
+                }
+              }, 5000);
+            });
+          } catch (sseError) {
+            console.error('❌ Failed to create SSE connection:', sseError);
+            this.isConnected = false;
+            this.statusText = 'SSE Connection Failed';
+            
+            // Fall back to polling in embedded environments
+            if (isEmbedded) {
+              this.startPollingMode();
+            }
+          }
+
+          this.eventSource.addEventListener('transcript', (event) => {
+            console.log('📥 [SSE] Received transcript event');
+            console.log('📥 [SSE] Event data:', event.data);
+            try {
+              const payload = JSON.parse(event.data);
+              console.log('📥 [SSE] Parsed payload:', payload);
+              const content = payload.content || {};
+              console.log('📥 [SSE] Extracted content:', content);
+              console.log('📥 [SSE] Calling handleNewTranscript with:', {
+                user_id: content.user_id,
+                user_name: content.user_name,
+                data: content.data?.substring(0, 50) + '...'
+              });
+              this.handleNewTranscript(content);
+              console.log('✅ [SSE] handleNewTranscript completed');
+            } catch (e) {
+              console.error('❌ [SSE] Error processing transcript:', e);
+              console.error('❌ [SSE] Event data was:', event.data);
+            }
+          });
+        },
+
+        startPollingMode() {
+          this.statusText = 'Polling Mode (Embedded)';
+          this.isConnected = false; // Show as disconnected but functional
+          
+          // Poll for transcripts every 2 seconds
+          const pollInterval = setInterval(async () => {
+            try {
+              const response = await fetch('/api/poll-transcripts', {
+                method: 'GET',
+                headers: {
+                  'Accept': 'application/json',
+                }
+              });
+              
+              if (response.ok) {
+                const data = await response.json();
+                if (data.transcripts && data.transcripts.length > 0) {
+                  data.transcripts.forEach(transcript => {
+                    this.handleNewTranscript(transcript);
+                  });
+                }
+              }
+            } catch (pollError) {
+              console.error('❌ Polling error:', pollError);
+            }
+          }, 2000);
+          
+          // Store interval reference for cleanup
+          this.pollInterval = pollInterval;
+        },
+
+        handleNewTranscript(content) {
+          console.log('🎯 [HANDLER] handleNewTranscript called');
+          console.log('🎯 [HANDLER] Content:', content);
+          
+          // Apply spelling correction to live transcripts for display
+          const correctedData = this.correctZoomSpelling(content.data || '');
+          const originalData = content.data || '';
+          
+          console.log('🎯 [HANDLER] Original data:', originalData);
+          console.log('🎯 [HANDLER] Corrected data:', correctedData);
+
+          // Add new transcript with corrected text for display
+          const newTranscript = {
+            user_id: content.user_id,
+            user_name: content.user_name,
+            data: correctedData,
+            original_data: originalData, // Keep original for backend processing
+            timestamp: Date.now(), // Always use local time instead of Zoom's timestamp
+            corrected: correctedData !== originalData, // Flag if it was corrected
+            tools: content.tools, // Include tools info
+            routing: content.routing, // Include routing info
+            original_message: content.original_message // Include original message
+          };
+          
+          console.log('🎯 [HANDLER] Created newTranscript:', newTranscript);
+
+          // If this is an AI response and we have a pending processing message, replace it
+          if (content.user_id === 'groq-ai' && content.original_message) {
+            const processingMessageIndex = this.transcripts.findIndex(t =>
+              t.processing &&
+              t.originalTranscript &&
+              (t.originalTranscript.data === content.original_message ||
+               t.originalTranscript.original_data === content.original_message)
+            );
+            if (processingMessageIndex !== -1) {
+              this.transcripts[processingMessageIndex] = {
+                user_id: newTranscript.user_id,
+                user_name: newTranscript.user_name,
+                data: newTranscript.data,
+                timestamp: newTranscript.timestamp,
+                tools: newTranscript.tools,
+                routing: newTranscript.routing,
+                original_message: newTranscript.original_message,
+                completed: true
+              };
+              this.saveTranscripts();
+              return;
+            }
+          }
+
+          // Otherwise, add to the list
+          console.log('📝 [HANDLER] Adding transcript to list');
+          console.log('📝 [HANDLER] Current transcripts count:', this.transcripts.length);
+          this.transcripts.unshift(newTranscript); // Add to beginning
+          console.log('📝 [HANDLER] New transcripts count:', this.transcripts.length);
+          this.saveTranscripts();
+          console.log('📝 [HANDLER] Transcripts saved to localStorage');
+
+          // Only trigger AI if this is a user message (not from Groq AI) AND mic is enabled
+          console.log('🎤 [HANDLER] Checking if should trigger AI:', {
+            user_id: newTranscript.user_id,
+            micEnabled: this.micEnabled,
+            requireHeyZoom: this.requireHeyZoom
+          });
+          
+          if (newTranscript.user_id !== 'groq-ai' && this.micEnabled) {
+            // If requireHeyZoom is disabled (AUTO mode), process all messages (with debouncing)
+            // Otherwise (REQUIRED mode), only process messages with "Hey Zoom" trigger (with debouncing)
+            if (!this.requireHeyZoom) {
+              console.log('🤖 AUTO mode enabled: Scheduling Zoom transcript processing');
+              this.scheduleZoomTrigger(newTranscript);
+            } else if (this.shouldSendTrigger(correctedData)) {
+              this.scheduleZoomTrigger(newTranscript);
+            }
+          } else if (newTranscript.user_id !== 'groq-ai' && !this.micEnabled) {
+            console.log('🔇 Mic OFF - Ignoring transcript:', correctedData.slice(0, 50));
+          }
+        },
+
+        clearTranscripts() {
+          if (confirm('Are you sure you want to clear all transcripts?')) {
+            this.transcripts = [];
+            localStorage.removeItem('zoom-transcripts');
+          }
+        },
+
+        deleteMessage(index, transcript) {
+          // Delete from Actions Feed (filtered view)
+          // Need to find the actual index in the full transcripts array
+          const actualIndex = this.transcripts.findIndex(t => 
+            t.timestamp === transcript.timestamp && 
+            t.user_id === transcript.user_id &&
+            t.data === transcript.data
+          );
+          
+          if (actualIndex !== -1) {
+            this.transcripts.splice(actualIndex, 1);
+            this.saveTranscripts();
+            console.log('🗑️ Deleted message from Actions');
+          }
+        },
+
+        deleteTranscript(index) {
+          // Delete from Transcripts tab (direct index)
+          if (index >= 0 && index < this.transcripts.length) {
+            this.transcripts.splice(index, 1);
+            this.saveTranscripts();
+            console.log('🗑️ Deleted transcript');
+          }
+        },
+
+        // Cleanup method for when component is destroyed
+        destroy() {
+          if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+          }
+          if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+          }
+        },
+
+        injectWeatherQuery() {
+          const fakeUsers = [
+            { name: "Alice Johnson", id: "12345" },
+            { name: "Bob Smith", id: "67890" },
+            { name: "Carol Williams", id: "11111" },
+            { name: "David Brown", id: "22222" },
+            { name: "Emma Davis", id: "33333" }
+          ];
+
+          const randomUser = fakeUsers[Math.floor(Math.random() * fakeUsers.length)];
+
+          const originalData = "Hey zoom whats the weather in SF";
+          const correctedData = this.correctZoomSpelling(originalData);
+
+          const weatherTranscript = {
+            user_id: randomUser.id,
+            user_name: randomUser.name,
+            data: correctedData,
+            original_data: originalData,
+            timestamp: Date.now() - Math.random() * 60000, // Random time within last minute
+            corrected: correctedData !== originalData
+          };
+
+          this.transcripts.unshift(weatherTranscript);
+          this.saveTranscripts();
+          this.checkForZoomTrigger(weatherTranscript); // Check for special triggers
+          this.activeTab = 'transcripts'; // Navigate to transcripts page
+
+        },
+
+        injectHuggingFaceQuery() {
+          const huggingfaceQueries = [
+            "Hey zoom what are the trending models on Hugging Face",
+            "Hey zoom find me a good text generation model",
+            "Hey zoom search for image classification datasets",
+            "Hey zoom what are the most downloaded models this week",
+            "Hey zoom find models for natural language processing"
+          ];
+
+          const fakeUsers = [
+            { name: "Alice Johnson", id: "12345" },
+            { name: "Bob Smith", id: "67890" },
+            { name: "Carol Williams", id: "11111" },
+            { name: "David Brown", id: "22222" },
+            { name: "Emma Davis", id: "33333" }
+          ];
+
+          const randomUser = fakeUsers[Math.floor(Math.random() * fakeUsers.length)];
+          const randomQuery = huggingfaceQueries[Math.floor(Math.random() * huggingfaceQueries.length)];
+
+          const hfTranscript = {
+            user_id: randomUser.id,
+            user_name: randomUser.name,
+            data: randomQuery,
+            timestamp: Date.now() - Math.random() * 60000
+          };
+
+          this.transcripts.unshift(hfTranscript);
+          this.saveTranscripts();
+          this.checkForZoomTrigger(hfTranscript);
+          this.activeTab = 'transcripts'; // Navigate to transcripts page
+
+        },
+
+        injectGroqCompoundQuery() {
+          const compoundQueries = [
+            "Hey zoom search for latest OpenAI announcements",
+            "Hey zoom calculate 15% of 3847",
+            "Hey zoom what's 25 * 36 + 128",
+            "Hey zoom find information about Groq LPU technology",
+            "Hey zoom search for recent AI developments"
+          ];
+
+          const fakeUsers = [
+            { name: "Alice Johnson", id: "12345" },
+            { name: "Bob Smith", id: "67890" },
+            { name: "Carol Williams", id: "11111" },
+            { name: "David Brown", id: "22222" },
+            { name: "Emma Davis", id: "33333" }
+          ];
+
+          const randomUser = fakeUsers[Math.floor(Math.random() * fakeUsers.length)];
+
+          const t = {
+            user_id: randomUser.id,
+            user_name: randomUser.name,
+            data: compoundQueries[Math.floor(Math.random() * compoundQueries.length)],
+            original_data: null,
+            timestamp: Date.now()
+          };
+          
+          t.original_data = t.data;
+          this.transcripts.unshift(t);
+          this.saveTranscripts();
+          this.checkForZoomTrigger(t);
+          this.activeTab = 'transcripts'; // Navigate to transcripts page
+        },
+
+        injectParallelQuery() {
+          const parallelQueries = [
+            "Hey zoom search for latest AI news",
+            "Hey zoom what are the current trending topics on social media",
+            "Hey zoom find information about quantum computing developments",
+            "Hey zoom what's the latest news about space exploration",
+            "Hey zoom search for recent developments in machine learning"
+          ];
+
+          const fakeUsers = [
+            { name: "Alice Johnson", id: "12345" },
+            { name: "Bob Smith", id: "67890" },
+            { name: "Carol Williams", id: "11111" },
+            { name: "David Brown", id: "22222" },
+            { name: "Emma Davis", id: "33333" }
+          ];
+
+          const randomUser = fakeUsers[Math.floor(Math.random() * fakeUsers.length)];
+          const randomQuery = parallelQueries[Math.floor(Math.random() * parallelQueries.length)];
+
+          const parallelTranscript = {
+            user_id: randomUser.id,
+            user_name: randomUser.name,
+            data: randomQuery,
+            timestamp: Date.now() - Math.random() * 60000
+          };
+
+          this.transcripts.unshift(parallelTranscript);
+          this.saveTranscripts();
+          this.checkForZoomTrigger(parallelTranscript);
+          this.activeTab = 'transcripts'; // Navigate to transcripts page
+
+        },
+
+        injectGeneralQuery() {
+          const generalQueries = [
+            "Hey zoom explain how machine learning works",
+            "Hey zoom what's the meaning of life",
+            "Hey zoom tell me about yourself",
+            "Hey zoom how does the internet work",
+            "Hey zoom what are some good programming practices"
+          ];
+
+          const fakeUsers = [
+            { name: "Alice Johnson", id: "12345" },
+            { name: "Bob Smith", id: "67890" },
+            { name: "Carol Williams", id: "11111" },
+            { name: "David Brown", id: "22222" },
+            { name: "Emma Davis", id: "33333" }
+          ];
+
+          const randomUser = fakeUsers[Math.floor(Math.random() * fakeUsers.length)];
+          const randomQuery = generalQueries[Math.floor(Math.random() * generalQueries.length)];
+
+          const generalTranscript = {
+            user_id: randomUser.id,
+            user_name: randomUser.name,
+            data: randomQuery,
+            timestamp: Date.now() - Math.random() * 60000
+          };
+
+          this.transcripts.unshift(generalTranscript);
+          this.saveTranscripts();
+          this.checkForZoomTrigger(generalTranscript);
+          this.activeTab = 'transcripts'; // Navigate to transcripts page
+
+        },
+
+        injectSalesforceQuery() {
+          const salesforceQueries = [
+            "Hey zoom search for leads in Acme Corp",
+            // "Hey zoom find leads with status Open",
+            // "Hey zoom show me all accounts in Salesforce",
+            // "Hey zoom run SOQL query SELECT Id, Name FROM Lead LIMIT 10"
+          ];
+
+          const fakeUsers = [
+            { name: "Alice Johnson", id: "12345" },
+            { name: "Bob Smith", id: "67890" },
+            { name: "Carol Williams", id: "11111" },
+            { name: "David Brown", id: "22222" },
+            { name: "Emma Davis", id: "33333" }
+          ];
+
+          const randomUser = fakeUsers[Math.floor(Math.random() * fakeUsers.length)];
+          const randomQuery = salesforceQueries[Math.floor(Math.random() * salesforceQueries.length)];
+
+          const sfTranscript = {
+            user_id: randomUser.id,
+            user_name: randomUser.name,
+            data: randomQuery,
+            timestamp: Date.now() - Math.random() * 60000
+          };
+
+          this.transcripts.unshift(sfTranscript);
+          this.saveTranscripts();
+          this.checkForZoomTrigger(sfTranscript);
+          this.activeTab = 'transcripts'; // Navigate to transcripts page
+
+        },
+
+        checkForZoomTrigger(transcript) {
+          const text = transcript.data || '';
+          // Simple but effective detection for "Hey Zoom" patterns
+          const lowerText = text.toLowerCase();
+          if (lowerText.includes('hey zoom') ||
+              lowerText.includes('heyzoom') ||
+              lowerText.startsWith('zoom')) {
+            this.scheduleZoomTrigger(transcript);
+          }
+        },
+
+        scheduleZoomTrigger(transcript) {
+          // Don't schedule if mic is off
+          if (!this.micEnabled) {
+            console.log('🔇 Mic OFF - Not scheduling trigger');
+            return;
+          }
+
+          // Clear any existing debounce timer
+          if (this.triggerDebounceTimer) {
+            clearTimeout(this.triggerDebounceTimer);
+          }
+
+          // Add this transcript to the collection of pending transcripts
+          this.pendingTranscripts.push(transcript);
+          console.log(`📥 Added transcript to pending collection (${this.pendingTranscripts.length} total)`);
+
+          // Schedule the trigger after the debounce delay
+          this.triggerDebounceTimer = setTimeout(() => {
+            // Double-check mic is still enabled when timer fires
+            if (this.pendingTranscripts.length > 0 && this.micEnabled) {
+              console.log(`⏰ Debounce complete, processing ${this.pendingTranscripts.length} transcript(s)`);
+              
+              // Combine all pending transcripts into a single message
+              const combinedData = this.pendingTranscripts
+                .map(t => t.data)
+                .join(' ');
+              
+              const combinedOriginalData = this.pendingTranscripts
+                .map(t => t.original_data || t.data)
+                .join(' ');
+              
+              // Create a combined transcript using the first transcript's metadata
+              const combinedTranscript = {
+                ...this.pendingTranscripts[0],
+                data: combinedData,
+                original_data: combinedOriginalData,
+                combined: true,
+                transcriptCount: this.pendingTranscripts.length
+              };
+              
+              console.log(`📝 Combined transcript: "${combinedData.slice(0, 100)}..."`);
+              
+              // Process the combined transcript
+              this.handleZoomTrigger(combinedTranscript);
+              
+              // Clear the pending transcripts array
+              this.pendingTranscripts = [];
+            } else if (!this.micEnabled) {
+              console.log('🔇 Mic turned OFF - Cancelled scheduled trigger');
+              this.pendingTranscripts = [];
+            }
+          }, this.debounceDelay);
+
+          console.log(`⏳ Scheduled trigger processing in ${this.debounceDelay}ms...`);
+        },
+
+        handleZoomTrigger(transcript) {
+          // Special function for "Hey Zoom" trigger
+
+          // Increment processing count
+          this.processingCount++;
+
+          // Add a special system message to show the trigger was detected
+          const zoomMessage = {
+            user_id: 'groq-ai',
+            user_name: 'Groq AI Assistant',
+            data: '<div class="flex items-center gap-2"><div class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div><span class="text-gray-500">Fetching response...</span></div>',
+            timestamp: Date.now(),
+            processing: true,
+            originalTranscript: transcript
+          };
+
+          this.transcripts.unshift(zoomMessage);
+          this.saveTranscripts();
+
+          // Call the API-driven inference function asynchronously
+          // This doesn't block the UI and allows concurrent processing
+          this.sendTriggerRequest(transcript)
+            .catch(error => {
+              console.error('❌ Groq inference failed:', error);
+              // Decrement processing count on error
+              this.processingCount = Math.max(0, this.processingCount - 1);
+              // Update the processing message to show error
+              const errorMessage = {
+                user_id: 'system',
+                user_name: 'Zoom AI',
+                data: '❌ Failed to process request. Please try again.',
+                timestamp: Date.now(),
+                error: true
+              };
+              this.transcripts.unshift(errorMessage);
+              this.saveTranscripts();
+            })
+            .finally(() => {
+              // Decrement processing count when done
+              this.processingCount = Math.max(0, this.processingCount - 1);
+            });
+        },
+
+        async triggerGroqInference(originalTranscript) {
+          try {
+
+            const response = await fetch('/api/groq-inference', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                transcript: originalTranscript.data,
+                user_name: originalTranscript.user_name,
+                context: 'meeting_transcript',
+                chat_history: this.transcripts // Send full chat history for context
+              })
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            // Update the processing message with the actual result
+            const processingMessageIndex = this.transcripts.findIndex(t =>
+              t.processing && t.originalTranscript?.data === originalTranscript.data
+            );
+
+            if (processingMessageIndex !== -1) {
+              // Replace the processing message with the actual response
+              this.transcripts[processingMessageIndex] = {
+                user_id: 'groq-ai',
+                user_name: 'Zoom AI Assistant',
+                data: result.response || 'I detected your Hey Zoom trigger! How can I help?',
+                timestamp: Date.now(),
+                tools: result.tools || [],
+                routing: result.routing,
+                completed: true
+              };
+            } else {
+              // If processing message not found, add the response normally
+              const aiResponse = {
+                user_id: 'groq-ai',
+                user_name: 'Zoom AI Assistant',
+                data: result.response || 'I detected your Hey Zoom trigger! How can I help?',
+                timestamp: Date.now(),
+                tools: result.tools || [],
+                routing: result.routing
+              };
+              this.transcripts.unshift(aiResponse);
+            }
+
+            this.saveTranscripts();
+
+          } catch (error) {
+            console.error('Groq API error:', error);
+
+            // Update the processing message with error status
+            const processingMessageIndex = this.transcripts.findIndex(t =>
+              t.processing && t.originalTranscript?.data === originalTranscript.data
+            );
+
+            if (processingMessageIndex !== -1) {
+              // Replace the processing message with error message
+              this.transcripts[processingMessageIndex] = {
+                user_id: 'groq-ai',
+                user_name: 'Zoom AI Assistant',
+                data: `❌ Sorry, I encountered an error processing your request: "${originalTranscript.data}"`,
+                timestamp: Date.now(),
+                tools: [],
+                error: true,
+                completed: true
+              };
+            } else {
+              // If processing message not found, add error message normally
+              const errorResponse = {
+                user_id: 'groq-ai',
+                user_name: 'Zoom AI Assistant',
+                data: `❌ Sorry, I encountered an error processing your request: "${originalTranscript.data}"`,
+                timestamp: Date.now(),
+                tools: [],
+                error: true
+              };
+              this.transcripts.unshift(errorResponse);
+            }
+
+            this.saveTranscripts();
+          }
+        },
+
+        getToolDisplayName(toolName) {
+          // Handle MCP tools with server names and namespaces
+          if (toolName.includes('.')) {
+            const [server, tool] = toolName.split('.');
+            const namespace = this.getToolNamespace(toolName);
+            return `🔧 ${namespace}:${server}.${tool}`;
+          }
+
+          // Handle Salesforce MCP function names (salesforce__sf_*)
+          if (toolName.startsWith('salesforce__')) {
+            return '☁️ Salesforce';
+          }
+
+          // Tool registry for display names and namespaces
+          const toolRegistry = {
+            'huggingface': { display: '🤗 HuggingFace', namespace: 'huggingface' },
+            'parallel_search': { display: '🔍 Parallel Search', namespace: 'parallel' },
+            'groq_compound': { display: '⚡ Groq Compound', namespace: 'general' },
+            'weather': { display: '🌤️ Weather', namespace: 'general' },
+            'direct_answer': { display: '💭 Direct Answer', namespace: 'general' },
+            'response_synthesis': { display: '🔄 Synthesis', namespace: 'general' },
+            'salesforce': { display: '☁️ Salesforce', namespace: 'crm' }
+          };
+
+          const toolInfo = toolRegistry[toolName];
+          if (toolInfo) {
+            return `${toolInfo.display} [${toolInfo.namespace}]`;
+          }
+
+          return `⚙️ ${toolName}`;
+        },
+
+        getToolNamespace(toolName) {
+          if (toolName.includes('.')) {
+            const server = toolName.split('.')[0];
+            return server === 'HuggingFace' ? 'huggingface' :
+                   server === 'ParallelSearch' ? 'parallel' : 'general';
+          }
+
+          const namespaceMap = {
+            'huggingface': 'huggingface',
+            'parallel_search': 'parallel',
+            'groq_compound': 'general',
+            'weather': 'general',
+            'direct_answer': 'general',
+            'response_synthesis': 'general'
+          };
+
+          return namespaceMap[toolName] || 'general';
+        },
+
+        formatAssistantResponse(transcript) {
+          if (transcript.user_id !== 'groq-ai' && transcript.user_id !== 'discovery-ai' && transcript.user_id !== 'system') {
+            // Escape HTML for regular user messages
+            return (transcript.data || '').replace(/[&<>"']/g, (char) => {
+              const entityMap = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+              };
+              return entityMap[char];
+            });
+          }
+
+          let response = transcript.data || '';
+
+          // For system messages, just return as-is (no markdown)
+          if (transcript.user_id === 'system') {
+            return response;
+          }
+
+          // For AI responses (groq-ai and discovery-ai), render markdown
+          if (typeof marked !== 'undefined') {
+            try {
+              // Configure marked for safe rendering
+              marked.setOptions({
+                breaks: true,
+                gfm: true,
+                headerIds: false,
+                mangle: false
+              });
+              response = marked.parse(response);
+            } catch (e) {
+              console.error('Markdown parsing error:', e);
+              // Fall back to plain text if markdown fails
+            }
+          }
+
+          return response;
+        },
+
+        correctZoomSpelling(text) {
+          if (!text) return text;
+
+          // Common misspellings and variations to correct
+          const corrections = [
+            // Exact word replacements (case-sensitive for proper nouns)
+            { from: /\bzoom\b/g, to: 'Zoom' },         // zoom -> Zoom (standardize)
+            { from: /\bZOOM\b/g, to: 'Zoom' },         // ZOOM -> Zoom
+            { from: /\bzooom\b/gi, to: 'Zoom' },       // zooom -> Zoom
+            { from: /\bzom\b/gi, to: 'Zoom' },         // zom -> Zoom
+
+            // Contextual corrections for phrases
+            { from: /hey\s+zoom/gi, to: 'Hey Zoom' },    // "hey zoom" -> "Hey Zoom"
+            { from: /hi\s+zoom/gi, to: 'Hey Zoom' },     // "hi zoom" -> "Hey Zoom"
+            { from: /hello\s+zoom/gi, to: 'Hey Zoom' },  // "hello zoom" -> "Hey Zoom"
+
+            // Handle cases where "zoom" appears without "hey"
+            { from: /^\s*zoom\s+/gi, to: 'Zoom ' },      // "zoom something" -> "Zoom something"
+          ];
+
+          let correctedText = text;
+
+          // Apply all corrections
+          corrections.forEach(correction => {
+            correctedText = correctedText.replace(correction.from, correction.to);
+          });
+
+          // Add Hugging Face corrections
+          correctedText = correctedText
+            .replace(/\bhugging\s+clothes?\b/gi, 'Hugging Face')
+            .replace(/\bhuging\s+face\b/gi, 'Hugging Face')
+            .replace(/\bhuggingface\b/gi, 'Hugging Face')
+            .replace(/\bhugging\s+face\b/gi, 'Hugging Face');
+
+          return correctedText;
+        },
+
+        // Simple heuristic to decide if we should send a trigger request
+        isZoomTrigger(text) {
+          // Alias for shouldSendTrigger - used in formatAssistantResponse
+          return this.shouldSendTrigger(text);
+        },
+
+        shouldSendTrigger(text) {
+          if (!text) return false;
+
+          // Use the same sophisticated detection logic as backend
+          const canonical = text
+            .toLowerCase()
+            .replace(/[.,!?;:]+/g, ' ') // ignore punctuation between/around words
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          // Common greeting words that can trigger Zoom
+          const GREETINGS = ['hey', 'hi', 'hello', 'yo', 'sup', 'what\'s up', 'greetings'];
+
+          // Allow up to 6 words between greeting and "zoom" (either order)
+          const MAX_WORD_GAP = 6;
+
+          // Check if it starts with "zoom"
+          if (/^zoom\b/.test(canonical)) return true;
+
+          // Check for mashed "heyzoom"
+          if (/\bheyzoom\b/i.test(canonical)) return true;
+
+          // Test all greeting patterns
+          for (const greeting of GREETINGS) {
+            const escapedGreeting = greeting.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // Pattern for greeting then zoom (with optional words in between)
+            const greetingThenZoom = new RegExp(`\\b${escapedGreeting}\\b(?:\\s+\\S+){0,${MAX_WORD_GAP}}\\s+\\bzoom\\b`, 'i');
+            // Pattern for zoom then greeting (with optional words in between)
+            const zoomThenGreeting = new RegExp(`\\bzoom\\b(?:\\s+\\S+){0,${MAX_WORD_GAP}}\\s+\\b${escapedGreeting}\\b`, 'i');
+
+            if (greetingThenZoom.test(canonical) || zoomThenGreeting.test(canonical)) {
+              return true;
+            }
+          }
+
+          return false;
+        },
+
+        // Send trigger request to backend with original transcript data
+        async sendTriggerRequest(transcript) {
+          try {
+            // Get custom MCP configs from the custom tools component if available
+            let customMcps = [];
+            if (transcript.customMcp) {
+              // If this transcript has a specific custom MCP attached, use it
+              customMcps = [transcript.customMcp];
+            } else {
+              // Otherwise, get all configured custom MCPs from the custom tools component
+              const customMcpElement = document.querySelector('[x-data*="customMcpTools"]');
+              if (customMcpElement && customMcpElement._x_dataStack) {
+                const customMcpData = customMcpElement._x_dataStack[0];
+                if (customMcpData && typeof customMcpData.getCustomMcpConfigs === 'function') {
+                  customMcps = customMcpData.getCustomMcpConfigs();
+                }
+              }
+            }
+
+            // Get Salesforce credentials from localStorage if available
+            // This solves the Deno Deploy serverless issue where in-memory storage doesn't persist
+            let salesforceCredentials = null;
+            try {
+              const stored = localStorage.getItem('salesforce-credentials');
+              if (stored) {
+                salesforceCredentials = JSON.parse(stored);
+                console.log('📤 Sending Salesforce credentials with request');
+              }
+            } catch (e) {
+              console.warn('Failed to load Salesforce credentials from localStorage:', e);
+            }
+
+            const response = await fetch('/api/trigger-groq', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                transcript: transcript.original_data || transcript.data, // Send original uncorrected text, fallback to data
+                user_name: transcript.user_name,
+                user_id: transcript.user_id,
+                timestamp: transcript.timestamp,
+                context: 'meeting_transcript', // Same context as before
+                chat_history: this.transcripts, // Send full chat history for context
+                custom_mcps: customMcps, // Send custom MCP configurations
+                salesforce_credentials: salesforceCredentials // Send Salesforce credentials for serverless compatibility
+              })
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            // Check if backend returned the response transcript directly (serverless fallback)
+            if (result.response_transcript) {
+
+              // Use the AI response data as-is (backend already processed it)
+              const responseData = result.response_transcript.data || '';
+
+              // Build the AI response transcript
+              const aiTranscript = {
+                user_id: result.response_transcript.user_id,
+                user_name: result.response_transcript.user_name,
+                data: responseData,
+                timestamp: result.response_transcript.timestamp || Date.now(),
+                tools: result.response_transcript.tools,
+                routing: result.response_transcript.routing,
+                original_message: result.response_transcript.original_message
+              };
+
+              // Replace processing message if present; otherwise prepend
+              const processingMessageIndex = this.transcripts.findIndex(t =>
+                t.processing &&
+                t.originalTranscript &&
+                (t.originalTranscript.data === transcript.original_data ||
+                 t.originalTranscript.data === transcript.data)
+              );
+
+              if (processingMessageIndex !== -1) {
+                this.transcripts[processingMessageIndex] = {
+                  user_id: aiTranscript.user_id,
+                  user_name: aiTranscript.user_name,
+                  data: aiTranscript.data,
+                  timestamp: aiTranscript.timestamp,
+                  tools: aiTranscript.tools,
+                  routing: aiTranscript.routing,
+                  original_message: aiTranscript.original_message,
+                  completed: true
+                };
+                console.log('✅ Replaced processing message with AI response:', {
+                  user_id: aiTranscript.user_id,
+                  data: aiTranscript.data?.slice(0, 50)
+                });
+              } else {
+                this.transcripts.unshift(aiTranscript);
+                console.log('✅ Added new AI response:', {
+                  user_id: aiTranscript.user_id,
+                  data: aiTranscript.data?.slice(0, 50)
+                });
+              }
+
+              this.saveTranscripts();
+            } else {
+              // The backend will handle adding the response to transcripts via SSE
+              // No need to do anything here - the response will come through the normal transcript stream
+            }
+
+          } catch (error) {
+            console.error('❌ Trigger request failed:', error);
+          }
+        }
+      }
+    }
+  </script>
+</body>
+</html>
