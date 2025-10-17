@@ -5,7 +5,7 @@
  * This module handles tool selection, parameter extraction, and Groq API calls
  */
 
-import { getAvailableTools } from "./tool-registry.js";
+import { getAvailableTools } from "./tool-registry-unified.js";
 
 // Groq client will be injected from main.js
 let groqClient = null;

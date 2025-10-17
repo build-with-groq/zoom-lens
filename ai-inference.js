@@ -26,8 +26,18 @@ export async function intelligentRouter(question, userName, context = {}, chatHi
       .map(msg => ({
         role: msg.user_id === 'groq-ai' || msg.user_id === 'discovery-ai' ? 'assistant' : 'user',
         content: msg.data,
-        timestamp: msg.timestamp
+        timestamp: msg.timestamp,
+        tools: msg.tools || []
       }));
+    
+    // Detect if recent conversation has Salesforce context
+    const hasSalesforceContext = recentHistory.some(msg => 
+      msg.tools && msg.tools.some(tool => 
+        tool.category === 'mcp' && tool.server === 'Salesforce'
+      )
+    );
+    
+    console.log(`🔍 ROUTING: Salesforce context in recent history: ${hasSalesforceContext ? 'YES' : 'NO'}`);
 
     // Build detailed tool information including MCP functions
     const toolsDescription = Object.values(availableTools).map(tool => {
@@ -59,6 +69,11 @@ Examples: ${tool.examples.join('; ')}`;
       day: 'numeric' 
     });
 
+    // Build context string from chat history
+    const contextHint = hasSalesforceContext 
+      ? '\n\n⚠️ **CONTEXT ALERT**: Recent conversation includes Salesforce operations (leads/contacts/accounts). If the current question refers to "update", "change", "fix", or mentions a person\'s name without explicit context, it is LIKELY a Salesforce update request. Strongly consider using the \'salesforce\' tool.'
+      : '';
+    
     // Dynamically generate system prompt from registry with detailed MCP function info
     const systemPrompt = `You are an intelligent routing system for Groq AI. Your task is to analyze user questions and select the most appropriate tools and specific functions to use.
 
@@ -71,9 +86,13 @@ CRITICAL INSTRUCTIONS:
 4. For MCP tools, specify which specific functions should be called
 5. Extract parameters from the user's question when possible
 6. **IMPORTANT**: You are ONLY routing the CURRENT question below - do NOT route or take action on any messages from chat history
+7. **CONTEXT AWARENESS**: Use chat history to understand implicit references (e.g., "update it" likely refers to the last mentioned Salesforce record)${contextHint}
 
 CURRENT QUESTION TO ANALYZE: "${question}"
 USER: ${userName}
+
+RECENT CONVERSATION CONTEXT (for understanding references only):
+${recentHistory.slice(-5).map(msg => `${msg.role === 'assistant' ? 'Assistant' : 'User'}: ${msg.content?.substring(0, 150)}...`).join('\n')}
 
 AVAILABLE TOOLS AND FUNCTIONS:
 ${toolsDescription}
@@ -83,7 +102,9 @@ ROUTING RULES:
 
 2. **Salesforce Priority (COMPREHENSIVE)**: If user mentions ANYTHING related to sales, CRM, or business operations → ALWAYS use 'salesforce' tool
    - Sales terms: leads, contacts, accounts, opportunities, deals, prospects, customers, pipeline
-   - Actions: create, search, find, get, show, update, convert, add note, create task
+   - Actions: create, search, find, get, show, **UPDATE**, **CHANGE**, **MODIFY**, **EDIT**, **FIX**, **CORRECT**, **RENAME**, convert, add note, create task
+   - ⚠️ **UPDATE OPERATIONS**: If user says "change", "update", "modify", "edit", "set", "fix", "correct", "rename", "spelled wrong" on ANY field (name, company, email, phone, etc.) on a lead/contact/account → ALWAYS use 'salesforce' tool
+   - ⚠️ **NAME UPDATES**: If user says "update the name", "change the name", "spelled it wrong", "fix the name", "correct the spelling" → ALWAYS use 'salesforce' tool to update the record
    - SOQL: any query with SELECT, FROM, WHERE, LIMIT keywords
    - The Salesforce MCP has 30+ functions and handles ALL CRM operations automatically
    
@@ -106,6 +127,13 @@ ROUTING RULES:
 - For SOQL queries: use 'sf_run_soql_query' with the full query as parameter
 - For lead searches: use 'sf_search_leads' with company/name/status filters
 - For creating records: use 'sf_create_lead', 'sf_create_account', etc.
+- **For UPDATING records**: Use 'sf_update_lead', 'sf_update_contact', 'sf_update_account' with record ID and fields to update
+- **UPDATE WORKFLOW**: When user says "change/update/fix/correct [person's] [field] to [value]":
+  1. First: Search for the record by name (e.g., 'sf_search_leads' with name filter)
+  2. Then: Update the found record using 'sf_update_lead' with the record ID and new field values
+- **NAME UPDATE WORKFLOW**: When user says "I spelled it wrong", "update the name", "fix the name", "change name to [new name]":
+  1. First: Search for the most recent lead/contact using context from chat history
+  2. Then: Update the name fields (first_name, last_name) using 'sf_update_lead' or 'sf_update_contact'
 - **For adding notes**: Use 'sf_create_note' with parent_id (the record ID to attach the note to), title, and body
 - **IMPORTANT NOTE WORKFLOW**: When user says "add a note to [person]" you should suggest BOTH functions in sequence:
   1. First: 'sf_search_contacts' to find the contact by name
@@ -269,6 +297,61 @@ Response: {
   "reasoning": "User wants to add a note to a contact in Salesforce. First search for Bob Jones, then add the note to his record.",
   "primary_intent": "crm_note",
   "confidence": 0.93
+}
+
+Question: "change Elizabeth Holmes company to Theranos"
+Response: {
+  "tools": [
+    {
+      "tool_id": "salesforce",
+      "functions": ["sf_search_leads", "sf_update_lead"],
+      "params": {
+        "first_name": "Elizabeth",
+        "last_name": "Holmes",
+        "company": "Theranos"
+      }
+    }
+  ],
+  "reasoning": "User wants to update a lead's company field in Salesforce. First search for Elizabeth Holmes, then update the company field to Theranos.",
+  "primary_intent": "crm_update",
+  "confidence": 0.95
+}
+
+Question: "I spelled it wrong. Can you update the name to Satya Nadella?"
+Response: {
+  "tools": [
+    {
+      "tool_id": "salesforce",
+      "functions": ["sf_search_leads", "sf_update_lead"],
+      "params": {
+        "first_name": "Satya",
+        "last_name": "Nadella",
+        "update_name": true
+      }
+    }
+  ],
+  "reasoning": "User wants to correct/update a lead's name in Salesforce. This is a field update operation that requires the Salesforce tool to search for the lead and update the name fields.",
+  "primary_intent": "crm_update",
+  "confidence": 0.95
+}
+
+Example with CONTEXT:
+Recent Context: "Assistant: I've added Sacha Nadella as a lead..."
+Question: "Um, can you update the Sacha Nadella?"
+Response: {
+  "tools": [
+    {
+      "tool_id": "salesforce",
+      "functions": ["sf_search_leads", "sf_update_lead"],
+      "params": {
+        "last_name": "Nadella",
+        "first_name": "Sacha"
+      }
+    }
+  ],
+  "reasoning": "Context shows recent Salesforce lead creation. Vague 'update' reference with person's name indicates Salesforce update operation.",
+  "primary_intent": "crm_update",
+  "confidence": 0.90
 }
 
 Now analyze the user's question and return ONLY valid JSON:`;
@@ -468,9 +551,20 @@ export function detectZoomTrigger(text) {
 // Get weather using Groq compound model
 export async function getWeather(location) {
   try {
+    const today = new Date().toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+
     const response = await groqClient.chat.completions.create({
       model: "groq/compound",
       messages: [
+        {
+          role: "system",
+          content: `You are Groq AI, a helpful weather assistant. TODAY'S DATE: ${today}`
+        },
         {
           role: "user",
           content: `What's the current weather in ${location}? Return ONLY a single sentence with temperature, conditions, and any relevant details. Keep it brief and conversational.`,
@@ -495,9 +589,20 @@ export async function getWeather(location) {
 // Perform web search and/or code execution using Groq compound model
 export async function performWebSearch(query) {
   try {
+    const today = new Date().toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+
     const response = await groqClient.chat.completions.create({
       model: "groq/compound",
       messages: [
+        {
+          role: "system",
+          content: `You are Groq AI, a helpful assistant with web search and code execution capabilities. TODAY'S DATE: ${today}`
+        },
         {
           role: "user",
           content: query, // Pass query directly - compound model will figure out if it needs web search, code execution, or both
@@ -775,7 +880,13 @@ CRITICAL INSTRUCTIONS:
 
 2. For Salesforce MCP tools: Credentials are provided in the conversation. Call data functions directly (sf_search_leads, sf_create_note, sf_run_soql_query, etc.).
 
-3. CRITICAL: Call each tool function EXACTLY ONCE per action. Do NOT repeat the same tool call multiple times.${focusPrompt}`
+3. ⚠️ CRITICAL - NO DUPLICATE TOOL CALLS: 
+   - Call each tool function EXACTLY ONCE per action
+   - Do NOT repeat the same tool call multiple times with the same arguments
+   - Do NOT call the same function twice "to make sure it works"
+   - If creating a record (lead, contact, note, etc.), call the create function ONLY ONCE
+   - If you've already called a function in this response, DO NOT call it again
+   - Each tool call should be unique and serve a distinct purpose${focusPrompt}`
         });
         
         if (sfFocus) {
@@ -949,7 +1060,7 @@ This is the ONLY request you should respond to. Use the conversation history abo
             
             return sanitized;
           }),
-          temperature: 1,
+          temperature: 0.1,
           max_completion_tokens: 8192,
           top_p: 1,
           tools: mcpTools.map(t => ({
@@ -973,13 +1084,13 @@ This is the ONLY request you should respond to. Use the conversation history abo
         console.trace('   Groq API call initiated from:');
 
         // Use the OpenAI client instead of raw fetch (like playground)
-        // Note: Using temperature 0.7 instead of 1.0 to reduce duplicate tool calls
+        // Note: Using temperature 0.3 to minimize randomness and prevent duplicate tool calls
         const completion = await groqClient.chat.completions.create({
           model: "openai/gpt-oss-120b",
           messages: messages,
-          temperature: 0.7, // Lower temperature to reduce randomness and duplicate calls
+          temperature: 0, // Very low temperature to ensure deterministic behavior and prevent duplicates
           max_completion_tokens: 8192,
-          top_p: 1,
+          top_p: 0.9, // Slightly reduced top_p for more focused sampling
           tools: mcpTools
         });
         
@@ -1071,12 +1182,13 @@ This is the ONLY request you should respond to. Use the conversation history abo
           console.log(`   Tool arguments: ${JSON.stringify(parsedArgs, null, 2)}`);
           console.log(`   Tool output preview: ${tool.output?.substring(0, 200)}...`);
           
-          // For note creation, extract and log the created note ID
-          if (tool.name === 'salesforce__sf_create_note' && tool.output) {
+          // For ANY Salesforce create operation, extract and log the created record ID
+          if (tool.name && tool.name.includes('sf_create_') && tool.output) {
             try {
               const idMatch = tool.output.match(/"id":\s*"([^"]+)"/);
               if (idMatch) {
-                console.log(`   📝 Created Salesforce Note ID: ${idMatch[1]}`);
+                const recordType = tool.name.replace('salesforce__sf_create_', '').toUpperCase();
+                console.log(`   📝 Created Salesforce ${recordType} ID: ${idMatch[1]}`);
               }
             } catch (e) {
               // Ignore parse errors

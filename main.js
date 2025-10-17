@@ -867,7 +867,7 @@ Respond in JSON format:
         { role: "system", content: `You are a discovery analysis AI that identifies opportunities for providing helpful background information. Today's date is ${today}.` },
         { role: "user", content: discoveryPrompt }
       ],
-      temperature: 0.3,
+      temperature: 0.1,
       max_tokens: 500
     });
 
