@@ -284,6 +284,18 @@
             <h3 class="font-semibold text-primary mb-1">Discover Feed</h3>
             <p class="text-sm text-text-muted">AI-powered background insights and context automatically discovered from your conversation.</p>
           </div>
+          
+          <!-- Mic Off Notice -->
+          <div x-show="!micEnabled" class="max-w-4xl mx-2 md:mx-auto px-6 py-4 bg-gray-50 rounded-xl mb-4 border border-gray-200">
+            <div class="flex items-center gap-3">
+              <div class="w-2 h-2 rounded-full bg-red-500"></div>
+              <div>
+                <p class="text-sm font-medium text-gray-700">Mic is off</p>
+                <p class="text-xs text-gray-500 mt-0.5">Incoming transcripts are not being processed. Enable the mic above to resume.</p>
+              </div>
+            </div>
+          </div>
+          
           <div x-show="!transcripts.some(t => t.user_id === 'discovery-ai')" class="p-8 text-center text-text-muted">
             <div class="text-4xl mb-3 opacity-50">🔮</div>
             <p class="font-medium text-gray-700">Discovery Mode</p>
@@ -378,6 +390,18 @@
             <h3 class="font-semibold text-primary mb-1">Action Feed</h3>
             <p class="text-sm text-text-muted">Assistant responses and tool results from your "Hey Zoom" requests.</p>
           </div>
+          
+          <!-- Mic Off Notice -->
+          <div x-show="!micEnabled" class="max-w-4xl mx-2 md:mx-auto px-6 py-4 bg-gray-50 rounded-xl mb-4 border border-gray-200">
+            <div class="flex items-center gap-3">
+              <div class="w-2 h-2 rounded-full bg-red-500"></div>
+              <div>
+                <p class="text-sm font-medium text-gray-700">Mic is off</p>
+                <p class="text-xs text-gray-500 mt-0.5">Incoming transcripts are not being processed. Enable the mic above to resume.</p>
+              </div>
+            </div>
+          </div>
+          
           <div x-show="!transcripts.some(t => t.user_id === 'groq-ai' || t.user_id === 'system')" class="p-8 text-center text-text-muted">
             <div class="text-4xl mb-3 opacity-50">🤖</div>
             <p class="font-medium text-gray-700">Zoom Lens is ready</p>
@@ -464,6 +488,17 @@
           <div class="mb-4">
             <h3 class="font-semibold text-primary mb-1">Available Tools</h3>
             <p class="text-sm text-text-muted">MCP-powered tools for web search, weather, AI models, and more. Test each tool or say "Hey Zoom" + your request to use them automatically.</p>
+          </div>
+          
+          <!-- Mic Off Notice -->
+          <div x-show="!micEnabled" class="max-w-4xl mx-2 md:mx-auto px-6 py-4 bg-gray-50 rounded-xl mb-4 border border-gray-200">
+            <div class="flex items-center gap-3">
+              <div class="w-2 h-2 rounded-full bg-red-500"></div>
+              <div>
+                <p class="text-sm font-medium text-gray-700">Mic is off</p>
+                <p class="text-xs text-gray-500 mt-0.5">Incoming transcripts are not being processed. Enable the mic above to resume.</p>
+              </div>
+            </div>
           </div>
           
           <!-- Tool Cards -->
@@ -825,6 +860,18 @@
             <h3 class="font-semibold text-primary mb-1">Transcripts</h3>
             <p class="text-sm text-text-muted">Full conversation history with all participants.</p>
           </div>
+          
+          <!-- Mic Off Notice -->
+          <div x-show="!micEnabled" class="max-w-4xl mx-2 md:mx-auto px-6 py-4 bg-gray-50 rounded-xl mb-4 border border-gray-200">
+            <div class="flex items-center gap-3">
+              <div class="w-2 h-2 rounded-full bg-red-500"></div>
+              <div>
+                <p class="text-sm font-medium text-gray-700">Mic is off</p>
+                <p class="text-xs text-gray-500 mt-0.5">Incoming transcripts are not being processed. Enable the mic above to resume.</p>
+              </div>
+            </div>
+          </div>
+          
           <div x-show="!transcripts.filter(t => t.user_id !== 'discovery-ai').length" class="p-6 text-center text-text-muted">
             <p class="text-sm text-gray-500">Conversation transcripts will appear here</p>
           </div>
@@ -944,17 +991,15 @@
         },
         
         removeTool(index) {
-          if (confirm('Are you sure you want to remove this custom MCP tool?')) {
-            this.customTools.splice(index, 1);
-            this.saveTools();
-          }
+          this.customTools.splice(index, 1);
+          this.saveTools();
         },
         
         saveTool(index) {
           const tool = this.customTools[index];
           
           if (!tool.name || !tool.serverUrl) {
-            alert('Please provide at least a name and server URL');
+            console.warn('Please provide at least a name and server URL');
             return;
           }
           
@@ -969,7 +1014,7 @@
           const tool = this.customTools[index];
           
           if (!tool.configured) {
-            alert('Please configure this tool first');
+            console.warn('Please configure this tool first');
             return;
           }
           
@@ -1213,10 +1258,6 @@
         },
 
         async clearCredentials() {
-          if (!confirm('Are you sure you want to clear Salesforce credentials?')) {
-            return;
-          }
-
           try {
             // Clear localStorage first
             localStorage.removeItem('salesforce-credentials');
@@ -1357,21 +1398,15 @@
               }
             } else {
               console.error('Failed to set focus:', result.error);
-              alert('Failed to set focus: ' + (result.error || 'Unknown error'));
             }
           } catch (error) {
             console.error('Error setting Salesforce focus:', error);
-            alert('Error setting focus. Please try again.');
           } finally {
             this.loading = false;
           }
         },
 
         async clearFocus() {
-          if (!confirm('Clear the current Salesforce focus?')) {
-            return;
-          }
-
           try {
             const response = await fetch('/api/salesforce/focus', {
               method: 'DELETE'
@@ -1391,7 +1426,6 @@
             }
           } catch (error) {
             console.error('Error clearing Salesforce focus:', error);
-            alert('Error clearing focus. Please try again.');
           }
         }
       };
@@ -1672,7 +1706,8 @@
             data: correctedData,
             original_data: input,
             timestamp: Date.now(),
-            corrected: correctedData !== input
+            corrected: correctedData !== input,
+            isManualInput: true // Flag to bypass mic check
           };
 
           // Add to transcripts
@@ -1913,10 +1948,8 @@
         },
 
         clearTranscripts() {
-          if (confirm('Are you sure you want to clear all transcripts?')) {
-            this.transcripts = [];
-            localStorage.removeItem('zoom-transcripts');
-          }
+          this.transcripts = [];
+          localStorage.removeItem('zoom-transcripts');
         },
 
         deleteMessage(index, transcript) {
@@ -2202,9 +2235,9 @@
         },
 
         scheduleZoomTrigger(transcript) {
-          // Don't schedule if mic is off
-          if (!this.micEnabled) {
-            console.log('🔇 Mic OFF - Not scheduling trigger');
+          // Don't schedule if mic is off, UNLESS this is a manual input
+          if (!this.micEnabled && !transcript.isManualInput) {
+            console.log('🔇 Mic OFF - Not scheduling trigger for RTMS transcript');
             return;
           }
 
@@ -2219,8 +2252,9 @@
 
           // Schedule the trigger after the debounce delay
           this.triggerDebounceTimer = setTimeout(() => {
-            // Double-check mic is still enabled when timer fires
-            if (this.pendingTranscripts.length > 0 && this.micEnabled) {
+            // Double-check mic is still enabled when timer fires, OR if any pending transcripts are manual inputs
+            const hasManualInput = this.pendingTranscripts.some(t => t.isManualInput);
+            if (this.pendingTranscripts.length > 0 && (this.micEnabled || hasManualInput)) {
               console.log(`⏰ Debounce complete, processing ${this.pendingTranscripts.length} transcript(s)`);
               
               // Combine all pending transcripts into a single message
@@ -2248,7 +2282,7 @@
               
               // Clear the pending transcripts array
               this.pendingTranscripts = [];
-            } else if (!this.micEnabled) {
+            } else if (!this.micEnabled && !hasManualInput) {
               console.log('🔇 Mic turned OFF - Cancelled scheduled trigger');
               this.pendingTranscripts = [];
             }

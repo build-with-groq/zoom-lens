@@ -887,10 +887,12 @@ Available tools:
 - Weather: Get current weather conditions for mentioned locations
 - Groq Compound (Web Search): FAST web search for current information about topics, companies, people, events, or trends. This uses groq/compound model which searches the web instantly. Use this for ANY web search needs.
 - HuggingFace: Find AI models or datasets if AI/ML topics are discussed
+- Salesforce: Search and retrieve CRM data about leads, contacts, accounts, opportunities, notes, and tasks. ONLY use when user explicitly mentions a person's name, company name, or asks to search Salesforce records.
 
 **IMPORTANT**: 
 - Discovery Mode does NOT have access to parallel_search (too slow/expensive)
 - Use "groq_compound" for all web searches - it's much faster and perfect for quick discovery insights
+- Use "salesforce" ONLY when user explicitly mentions searching for or finding specific people/companies in CRM
 - Keep insights short and relevant
 
 Your task:
@@ -898,20 +900,33 @@ Your task:
 2. Identify if that specific message mentions a topic that could benefit from additional context
 3. Suggest 0-1 insight to discover (MAXIMUM 1!)
 
-**CRITICAL RULES**:
+**CRITICAL RULES - BE VERY SELECTIVE**:
+- Default to "should_discover": false unless there's a VERY CLEAR need
 - Suggest ONLY 1 insight maximum
 - Focus EXCLUSIVELY on the [NEWEST] message
 - Ignore all older messages - even if they seem related
+- DO NOT suggest insights for general questions, casual conversation, or clarifications
+- ONLY suggest insights when the user explicitly asks for current/external information
 - DO NOT suggest weather unless the [NEWEST] message explicitly asks about weather/temperature
-- Only suggest an insight if it would genuinely add value
+- DO NOT suggest web searches for topics the AI can answer from general knowledge
+- DO NOT suggest Salesforce unless user explicitly mentions a person/company name to look up
+
+ONLY suggest insights for:
+- Explicit requests for current/real-time information (news, events, trends)
+- Specific weather queries ("what's the weather in...")
+- Specific person/company lookups in Salesforce ("find Bob Jones", "search for Acme Corp")
+- AI/ML model searches when user asks to find specific models
 
 Don't suggest insights for:
+- General knowledge questions (AI can answer without tools)
+- Casual conversation or greetings
+- Clarification questions
+- Follow-up questions about previous topics
 - Topics from old messages (anything NOT marked [NEWEST])
 - Questions that were already answered
-- Topics already covered in previous discovery insights  
-- Weather (unless [NEWEST] message explicitly asks "what's the weather")
+- Topics already covered in previous discovery insights
 - Trivial information
-- Topics that don't need external context
+- Topics that don't need external/real-time context
 
 Respond in JSON format:
 {
@@ -921,7 +936,7 @@ Respond in JSON format:
       "topic": "what to discover",
       "reasoning": "why this would be valuable",
       "suggested_query": "specific query to use",
-      "tool": "weather|groq_compound|huggingface"
+      "tool": "weather|groq_compound|huggingface|salesforce"
     }
   ]
 }`;
@@ -929,10 +944,10 @@ Respond in JSON format:
     const discoveryResponse = await groqClient.chat.completions.create({
       model: MODEL_DISCOVERY,
       messages: [
-        { role: "system", content: `You are a discovery analysis AI that identifies opportunities for providing helpful background information. Today's date is ${today}.` },
+        { role: "system", content: `You are a highly selective discovery analysis AI. Default to "should_discover": false. ONLY suggest insights when users explicitly request current/external information. Be very conservative - most messages don't need discovery. Today's date is ${today}.` },
         { role: "user", content: discoveryPrompt }
       ],
-      temperature: 0.1,
+      temperature: 0.05,
       max_tokens: 500
     });
 
