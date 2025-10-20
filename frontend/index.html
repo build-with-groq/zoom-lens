@@ -1876,6 +1876,13 @@
             }
           }
 
+          // Check if mic is OFF and this is a user transcript (not AI response)
+          // Skip adding user transcripts when mic is disabled
+          if (!this.micEnabled && newTranscript.user_id !== 'groq-ai' && newTranscript.user_id !== 'discovery-ai' && newTranscript.user_id !== 'system') {
+            console.log('🔇 Mic OFF - Skipping incoming transcript from stream:', correctedData.slice(0, 50));
+            return;
+          }
+
           // Otherwise, add to the list
           console.log('📝 [HANDLER] Adding transcript to list');
           console.log('📝 [HANDLER] Current transcripts count:', this.transcripts.length);
