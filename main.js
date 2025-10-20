@@ -485,6 +485,32 @@ app.get('/api/poll-transcripts', (c) => {
   });
 });
 
+// Tool Registry API - Exposes the unified tool registry for frontend
+app.get('/api/tools/registry', (c) => {
+  // Build a simplified registry for frontend display purposes
+  const simplifiedRegistry = {};
+  
+  for (const [toolId, tool] of Object.entries(UNIFIED_TOOL_REGISTRY)) {
+    simplifiedRegistry[toolId] = {
+      id: tool.id,
+      displayName: tool.displayName,
+      type: tool.type,
+      category: tool.category,
+      namespace: tool.namespace,
+      description: tool.description,
+      // For MCP tools, include server label for matching
+      ...(tool.type === 'mcp' && {
+        server_label: tool.server_label
+      })
+    };
+  }
+  
+  return c.json({
+    registry: simplifiedRegistry,
+    timestamp: Date.now()
+  });
+});
+
 // Salesforce MCP Credential Management Endpoints
 app.get('/api/salesforce/status', getSalesforceStatus);
 app.get('/api/salesforce/oauth-url', getSalesforceOAuthUrl);

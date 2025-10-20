@@ -884,6 +884,7 @@
   </div>
 
   <script>
+    // Version: 2024-10-20-v2 - Added tool registry loading
     function customMcpTools() {
       return {
         customTools: [],
@@ -1412,6 +1413,7 @@
         triggerDebounceTimer: null, // Timer for debouncing trigger requests
         pendingTranscripts: [], // Store all pending transcripts during debounce period
         debounceDelay: 1500, // Wait 1.5 seconds after last transcript before processing
+        toolRegistry: {}, // Loaded from backend API
 
         init() {
           this.loadStoredTranscripts();
@@ -1420,6 +1422,7 @@
           this.loadRequireHeyZoomSettings();
           this.loadDiscoverySettings();
           this.loadDebounceSettings();
+          this.loadToolRegistry();
           
           // Watch for changes to micEnabled and save to localStorage
           this.$watch('micEnabled', (value) => {
@@ -1505,6 +1508,21 @@
             }
           } catch (e) {
             console.error('Error loading debounce settings:', e);
+          }
+        },
+        
+        async loadToolRegistry() {
+          try {
+            const response = await fetch('/api/tools/registry');
+            if (response.ok) {
+              const data = await response.json();
+              this.toolRegistry = data.registry || {};
+              console.log('🔧 Loaded tool registry:', Object.keys(this.toolRegistry).length, 'tools');
+            } else {
+              console.warn('Failed to load tool registry:', response.status);
+            }
+          } catch (e) {
+            console.error('Error loading tool registry:', e);
           }
         },
         
@@ -2365,34 +2383,38 @@
         },
 
         getToolDisplayName(toolName) {
-          // Handle MCP tools with server names and namespaces
-          if (toolName.includes('.')) {
-            const [server, tool] = toolName.split('.');
-            const namespace = this.getToolNamespace(toolName);
-            return `🔧 ${namespace}:${server}.${tool}`;
-          }
-
           // Handle Salesforce MCP function names (salesforce__sf_*)
           if (toolName.startsWith('salesforce__')) {
+            // Check registry first
+            const salesforceTool = this.toolRegistry['salesforce'];
+            if (salesforceTool) {
+              return salesforceTool.displayName;
+            }
             return '☁️ Salesforce';
           }
 
-          // Tool registry for display names and namespaces
-          const toolRegistry = {
-            'huggingface': { display: '🤗 HuggingFace', namespace: 'huggingface' },
-            'parallel_search': { display: '🔍 Parallel Search', namespace: 'parallel' },
-            'groq_compound': { display: '⚡ Groq Compound', namespace: 'general' },
-            'weather': { display: '🌤️ Weather', namespace: 'general' },
-            'direct_answer': { display: '💭 Direct Answer', namespace: 'general' },
-            'response_synthesis': { display: '🔄 Synthesis', namespace: 'general' },
-            'salesforce': { display: '☁️ Salesforce', namespace: 'crm' }
-          };
-
-          const toolInfo = toolRegistry[toolName];
-          if (toolInfo) {
-            return `${toolInfo.display} [${toolInfo.namespace}]`;
+          // Handle MCP tools with server names (e.g., "HuggingFace.search_models")
+          if (toolName.includes('.')) {
+            const [serverLabel, functionName] = toolName.split('.');
+            
+            // Find the tool in registry by matching server_label
+            for (const [toolId, tool] of Object.entries(this.toolRegistry)) {
+              if (tool.server_label === serverLabel || tool.id === serverLabel.toLowerCase()) {
+                return tool.displayName;
+              }
+            }
+            
+            // Fallback: format it nicely
+            return `🔧 ${serverLabel}`;
           }
 
+          // Check the loaded tool registry from backend
+          const toolInfo = this.toolRegistry[toolName];
+          if (toolInfo) {
+            return toolInfo.displayName;
+          }
+
+          // Fallback for unknown tools
           return `⚙️ ${toolName}`;
         },
 
