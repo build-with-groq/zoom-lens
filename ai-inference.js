@@ -3,11 +3,17 @@
  * Handles intelligent routing, tool execution, and AI-powered inference
  */
 
-import { groqClient } from "./config.js";
+import { 
+  groqClient,
+  SALESFORCE_MCP_URL,
+  MODEL_ROUTER,
+  MODEL_INFERENCE,
+  MODEL_DIRECT_ANSWER,
+  MODEL_SYNTHESIS
+} from "./config.js";
 import { getAvailableTools } from "./tool-registry-unified.js";
 import { getSalesforceSessionId } from "./auth-utils.js";
 import { processToolAuth } from "./auth-utils.js";
-import { SALESFORCE_MCP_URL } from "./config.js";
 import { getSalesforceFocus, getFocusGoalPrompt } from "./salesforce-focus.js";
 
 // Enhanced AI-powered router that decides which tools and specific MCP functions to use
@@ -16,7 +22,7 @@ export async function intelligentRouter(question, userName, context = {}, chatHi
     // Get routing information from unified registry
     const availableTools = getAvailableTools();
 
-    console.log(`🔍 ROUTING: Analyzing question: "${question}" from user: ${userName}`);
+    console.log(`ROUTING: Analyzing question: "${question}" from user: ${userName}`);
 
     // Prepare chat history context (last 30 messages for context)
     // Note: chatHistory comes from frontend with newest first, so take first 30 and reverse
@@ -357,7 +363,7 @@ Response: {
 Now analyze the user's question and return ONLY valid JSON:`;
 
     const response = await groqClient.chat.completions.create({
-      model: "openai/gpt-oss-20b", // Using the model you specified for better inference
+      model: MODEL_ROUTER,
       messages: [
         {
           role: "system",
@@ -559,11 +565,11 @@ export async function getWeather(location) {
     });
 
     const response = await groqClient.chat.completions.create({
-      model: "groq/compound",
+      model: "groq/compound-mini",
       messages: [
         {
           role: "system",
-          content: `You are Groq AI, a helpful weather assistant. TODAY'S DATE: ${today}`
+          content: `You are Groq AI, a helpful weather assistant. TODAY'S DATE: ${today}. Respond with a single short line.`
         },
         {
           role: "user",
@@ -597,7 +603,7 @@ export async function performWebSearch(query) {
     });
 
     const response = await groqClient.chat.completions.create({
-      model: "groq/compound",
+      model: "groq/compound-mini",
       messages: [
         {
           role: "system",
@@ -686,7 +692,7 @@ ${historyText}
     });
 
     const response = await groqClient.chat.completions.create({
-      model: "openai/gpt-oss-120b",
+      model: MODEL_DIRECT_ANSWER,
       messages: messages
     });
 
@@ -705,13 +711,14 @@ ${historyText}
 }
 
 // Generic inference function using intelligent routing with MCP support
-export async function performGroqInference(transcript, userName, context = 'general', chatHistory = [], skipTriggerDetection = false) {
+export async function performGroqInference(transcript, userName, context = 'general', chatHistory = [], skipTriggerDetection = false, progressCallback = null) {
   console.log(`\n🚀 performGroqInference CALLED`);
   console.log(`   Transcript: "${transcript}"`);
   console.log(`   User: ${userName}`);
   console.log(`   Context: ${context}`);
   console.log(`   Chat History Length: ${chatHistory.length}`);
   console.log(`   Skip Trigger Detection: ${skipTriggerDetection}`);
+  console.log(`   Progress Callback: ${progressCallback ? 'YES' : 'NO'}`);
   
   try {
     // First, detect if this is actually a Zoom trigger (unless skipped)
@@ -760,6 +767,12 @@ export async function performGroqInference(transcript, userName, context = 'gene
     console.log(`   Reasoning: "${routingDecision.reasoning}"`);
     console.log(`   Primary Intent: ${routingDecision.primaryIntent}`);
     console.log(`   Confidence: ${routingDecision.confidence}`);
+    
+    // Broadcast routing decision to frontend
+    if (progressCallback) {
+      const toolsList = routingDecision.tools.map(t => t.replace('_', ' ')).join(', ');
+      progressCallback(`Analyzing... Will use: ${toolsList}`);
+    }
     
     // Log detailed tool information including functions and params
     if (routingDecision.toolDetails && routingDecision.toolDetails.length > 0) {
@@ -861,7 +874,7 @@ export async function performGroqInference(transcript, userName, context = 'gene
           day: 'numeric' 
         });
 
-        // Get Salesforce credentials if needed - add as a user message like the playground
+        // Get Salesforce credentials if needed - add to system prompt
         const sfCreds = getSalesforceSessionId('default');
         
         // Get Salesforce focus goal if set
@@ -870,7 +883,7 @@ export async function performGroqInference(transcript, userName, context = 'gene
         
         const messages = [];
         
-        // Add system message with today's date and instructions about chat history
+        // Add system message (NO credentials here - they go in user message per MCP protocol)
         messages.push({
           role: "system",
           content: `You are Groq AI assistant. Today's date is ${today}. Provide accurate and helpful responses using the available tools.
@@ -878,7 +891,7 @@ export async function performGroqInference(transcript, userName, context = 'gene
 CRITICAL INSTRUCTIONS:
 1. You are responding to the CURRENT user query only. Any chat history provided is for context ONLY - do NOT re-execute or repeat actions from previous messages. Focus ONLY on the current request.
 
-2. For Salesforce MCP tools: Credentials are provided in the conversation. Call data functions directly (sf_search_leads, sf_create_note, sf_run_soql_query, etc.).
+2. For Salesforce MCP tools: Credentials are provided in the user message. Call data functions directly (sf_search_leads, sf_create_note, sf_run_soql_query, etc.).
 
 3. ⚠️ CRITICAL - NO DUPLICATE TOOL CALLS: 
    - Call each tool function EXACTLY ONCE per action
@@ -903,6 +916,9 @@ CRITICAL INSTRUCTIONS:
         console.log(`📚 CHAT HISTORY PROCESSING`);
         console.log(`   Chat history exists: ${!!chatHistory}`);
         console.log(`   Chat history length: ${chatHistory?.length || 0}`);
+        
+        // Initialize conversationHistory variable
+        let conversationHistory = '';
         
         if (chatHistory && chatHistory.length > 0) {
           console.log(`   ✅ Processing chat history: ${chatHistory.length} total messages`);
@@ -941,9 +957,8 @@ CRITICAL INSTRUCTIONS:
             console.log(historyText);
             console.log(`   ${'-'.repeat(80)}\n`);
             
-            messages.push({
-              role: "user",
-              content: `<previous_conversation_context>
+            // Store history to be combined with query in ONE user message
+            conversationHistory = `<previous_conversation_context>
 ⚠️ IMPORTANT: The messages below are PAST conversation history for context ONLY.
 These messages have ALREADY been processed and responded to. 
 DO NOT re-execute any actions or tools from this history.
@@ -951,8 +966,9 @@ DO NOT answer questions that were already answered below.
 Only use this history to understand context for the NEW current request that follows.
 
 ${historyText}
-</previous_conversation_context>`
-            });
+</previous_conversation_context>
+
+`;
           } else {
             console.log(`   ⚠️ No messages left after filtering (all were system/discovery/current)`);
           }
@@ -961,42 +977,39 @@ ${historyText}
         }
         console.log(`${'='.repeat(80)}\n`);
         
-        // Add Salesforce credentials using the EXACT pattern from the working examples
-        // The pattern is: credentials JSON (pretty-printed) + double newline + query in ONE user message
+        // Build the user message: credentials (if SF) + history + query - ALL IN ONE MESSAGE
+        let userMessageContent = '';
+        
+        // Add Salesforce credentials at the start if using Salesforce tools (per MCP protocol)
         if (sfCreds && routingDecision.tools.includes('salesforce')) {
-          console.log(`   📋 Adding Salesforce credentials + query in SINGLE user message`);
-          
-          // Credentials object - include state like in the working example
           const credentialsObj = {
             access_token: sfCreds.access_token,
             instance_url: sfCreds.instance_url,
             state: sfCreds.state || `mcp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
           };
           
-          // Format as pretty JSON + double newline + query (exactly like working curl/playground)
-          const credentialsJson = JSON.stringify(credentialsObj, null, 2);
-          
-          // Combine credentials + query in ONE user message
-          messages.push({
-            role: "user",
-            content: `${credentialsJson}
-
-${transcript}`
-          });
-          
-          console.log(`   ✅ Salesforce credentials + query combined in single message`);
-        } else {
-          // No Salesforce - just add the user query normally
-          messages.push({
-            role: "user",
-            content: `<current_request>
+          userMessageContent = `${JSON.stringify(credentialsObj, null, 2)}\n\n`;
+          console.log(`   🔐 Adding Salesforce credentials to user message`);
+        }
+        
+        // Add conversation history if available
+        userMessageContent += conversationHistory;
+        
+        // Add the current request
+        userMessageContent += `<current_request>
 🆕 NEW REQUEST TO RESPOND TO NOW:
 ${transcript}
 
 This is the ONLY request you should respond to. Use the conversation history above ONLY for context.
-</current_request>`
-          });
-        }
+</current_request>`;
+        
+        // Push the complete user message
+        messages.push({
+          role: "user",
+          content: userMessageContent
+        });
+        
+        console.log(`   ✅ User message created (credentials: ${sfCreds && routingDecision.tools.includes('salesforce') ? 'YES' : 'NO'}, history: ${conversationHistory.length > 0 ? 'YES' : 'NO'})`);
 
         console.log(`\n   📤 REQUEST DETAILS:`);
         console.log(`      Model: openai/gpt-oss-120b`);
@@ -1011,7 +1024,7 @@ This is the ONLY request you should respond to. Use the conversation history abo
           } else if (msg.role === 'tool') {
             console.log(`      ${idx + 1}. [TOOL] ${msg.name}: ${msg.content?.substring(0, 40) || 'empty'}...`);
           } else if (msg.content && msg.content.includes('access_token')) {
-            console.log(`      ${idx + 1}. [USER] Salesforce credentials`);
+            console.log(`      ${idx + 1}. [USER] Salesforce credentials + history + query`);
           } else if (msg.content) {
             console.log(`      ${idx + 1}. [${msg.role.toUpperCase()}] "${msg.content.substring(0, 60)}..."`);
           } else {
@@ -1037,16 +1050,18 @@ This is the ONLY request you should respond to. Use the conversation history abo
         
         // Log the full request payload (with sanitized credentials)
         const requestPayload = {
-          model: "openai/gpt-oss-120b",
-          // model: "moonshotai/kimi-k2-instruct-0905",
+          model: MODEL_INFERENCE,
           messages: messages.map(m => {
             const sanitized = { role: m.role };
             
             // Handle different message types
             if (m.content) {
-              sanitized.content = (m.content.includes && m.content.includes('access_token')) 
-                ? '[SALESFORCE CREDENTIALS - REDACTED]' 
-                : m.content;
+              // Sanitize Salesforce credentials in user message
+              if (m.content.includes('access_token')) {
+                sanitized.content = '[SALESFORCE CREDENTIALS - REDACTED]';
+              } else {
+                sanitized.content = m.content;
+              }
             }
             if (m.tool_calls) {
               sanitized.tool_calls = '[TOOL CALLS - REDACTED]';
@@ -1061,7 +1076,7 @@ This is the ONLY request you should respond to. Use the conversation history abo
             return sanitized;
           }),
           temperature: 0.1,
-          max_completion_tokens: 8192,
+          // max_completion_tokens: 8192,
           top_p: 1,
           tools: mcpTools.map(t => ({
             ...t,
@@ -1077,24 +1092,71 @@ This is the ONLY request you should respond to. Use the conversation history abo
         console.log(`${'='.repeat(80)}\n`);
 
         console.log(`⏳ Calling Groq API... (this may take a moment)\n`);
+        
+        // Broadcast API call progress
+        if (progressCallback) {
+          const toolNames = routingDecision.toolDetails && routingDecision.toolDetails.length > 0
+            ? routingDecision.toolDetails.map(t => t.functions?.join(', ')).filter(Boolean).join(', ')
+            : routingDecision.tools.join(', ');
+          progressCallback(`Executing: ${toolNames}...`);
+        }
+        
         const startTime = Date.now();
         const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         console.log(`   🆔 Request ID: ${requestId} (track this to detect duplicates)`);
         console.log(`   🔍 API Call Stack Trace:`);
         console.trace('   Groq API call initiated from:');
 
-        // Use the OpenAI client instead of raw fetch (like playground)
-        // Note: Using temperature 0.3 to minimize randomness and prevent duplicate tool calls
-        const completion = await groqClient.chat.completions.create({
-          model: "openai/gpt-oss-120b",
-          messages: messages,
-          temperature: 0, // Very low temperature to ensure deterministic behavior and prevent duplicates
-          max_completion_tokens: 8192,
-          top_p: 0.9, // Slightly reduced top_p for more focused sampling
-          tools: mcpTools
-        });
+        // Retry logic for 500 errors
+        const maxRetries = 3;
+        let retryCount = 0;
+        let completion = null;
+        let lastError = null;
         
-        console.log(`   ✅ API call completed for request: ${requestId}`);
+        while (retryCount <= maxRetries) {
+          try {
+            if (retryCount > 0) {
+              const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 5000); // Exponential backoff: 1s, 2s, 4s (max 5s)
+              console.log(`   ⏳ Retry ${retryCount}/${maxRetries} after ${delay}ms delay...`);
+              if (progressCallback) {
+                progressCallback(`Retrying (${retryCount}/${maxRetries})...`);
+              }
+              await new Promise(resolve => setTimeout(resolve, delay));
+            }
+            
+            // Use the OpenAI client (matching Playground's working parameters)
+            completion = await groqClient.chat.completions.create({
+              model: MODEL_INFERENCE,
+              messages: messages,
+              temperature: 1, // Match Playground - temp 0 may cause issues with MCP
+              max_completion_tokens: 8192,
+              top_p: 1,
+              "reasoning_effort": "medium",
+              tools: mcpTools
+            });
+            
+            console.log(`   ✅ API call completed for request: ${requestId}`);
+            break; // Success! Exit retry loop
+            
+          } catch (error) {
+            lastError = error;
+            
+            // Only retry on 500 errors
+            if (error.status === 500 && retryCount < maxRetries) {
+              console.warn(`   ⚠️ Groq API returned 500 error (attempt ${retryCount + 1}/${maxRetries + 1})`);
+              retryCount++;
+              continue;
+            } else {
+              // Non-500 error or max retries reached, throw the error
+              throw error;
+            }
+          }
+        }
+        
+        if (!completion) {
+          console.error(`   ❌ All ${maxRetries + 1} attempts failed`);
+          throw lastError;
+        }
 
         const duration = Date.now() - startTime;
         console.log(`\n${'='.repeat(80)}`);
@@ -1176,6 +1238,12 @@ This is the ONLY request you should respond to. Use the conversation history abo
         // Track tool calls to detect duplicates
         const toolCallTracker = new Map();
         
+        // Broadcast progress for each tool execution
+        if (progressCallback && executedTools.length > 0) {
+          const toolNames = executedTools.map(t => t.name?.replace('salesforce__', '').replace('sf_', '')).join(', ');
+          progressCallback(`✓ Completed: ${toolNames}`);
+        }
+        
         executedTools.forEach((tool, idx) => {
           console.log(`✅ MCP call (executed_tools #${idx + 1}): ${tool.name}`);
           const parsedArgs = JSON.parse(tool.arguments || '{}');
@@ -1242,6 +1310,13 @@ This is the ONLY request you should respond to. Use the conversation history abo
         console.error('Error details:', mcpError.message);
         console.error('Error stack:', mcpError.stack);
 
+        // Check if this was a 500 error after retries
+        if (mcpError.status === 500) {
+          console.error('💥 Groq API returned 500 error after all retries');
+          console.error('   This is likely a temporary server issue');
+          console.error('   Request ID:', mcpError.request_id);
+        }
+
         // Try to get more details from the error
         let errorDetails = {};
         try {
@@ -1285,12 +1360,14 @@ This is the ONLY request you should respond to. Use the conversation history abo
 
           if (toolConfig.type === 'mcp') {
             // MCP tool failed, try to provide a fallback response
-            if (toolName === 'huggingface') {
+            if (toolName === 'salesforce') {
+              finalResponse = `I tried to access Salesforce but encountered a temporary issue the API (after multiple retries). Please try again in a moment. If the issue persists, the Groq API may be experiencing downtime.`;
+            } else if (toolName === 'huggingface') {
               finalResponse = `I tried to search Hugging Face for trending models, but the tool is currently unavailable. You can visit https://huggingface.co/models?sort=trending to see the latest trending models directly.`;
             } else if (toolName === 'parallel_search') {
               finalResponse = `I tried to perform a web search, but the tool is currently unavailable. You can try searching directly on your preferred search engine.`;
             } else {
-              finalResponse = `I tried to use the ${toolName} tool, but it's currently unavailable.`;
+              finalResponse = `I tried to use the ${toolName} tool, but it's currently unavailable (after multiple retries). This may be a temporary Groq API issue.`;
             }
             toolsUsed.push({
               name: toolName,
@@ -1385,7 +1462,7 @@ ${toolResults.map((result, index) =>
 Please provide a comprehensive, well-formatted response that synthesizes all this information for the user.`;
 
           const summaryResponse = await groqClient.chat.completions.create({
-            model: "openai/gpt-oss-120b",
+            model: MODEL_SYNTHESIS,
             messages: [
               {
                 role: "system",

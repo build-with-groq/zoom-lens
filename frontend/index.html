@@ -303,6 +303,17 @@
                   </div>
                   
                   <div x-show="!t.processing" class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
+                    <!-- Replay button (appears on hover) -->
+                    <button 
+                      @click="replayMessage(t)"
+                      class="absolute top-3 right-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-blue-50 rounded"
+                      title="Replay this message"
+                    >
+                      <svg class="w-3.5 h-3.5 text-gray-400 hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                      </svg>
+                    </button>
+                    
                     <!-- Delete button (appears on hover) -->
                     <button 
                       @click="deleteMessage(i, t)"
@@ -378,6 +389,17 @@
                 <div>
                   <!-- Processing messages and regular AI responses: same full container format -->
                   <div x-show="t.user_id === 'groq-ai'" class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
+                    <!-- Replay button (appears on hover) -->
+                    <button 
+                      @click="replayMessage(t)"
+                      class="absolute top-3 right-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-blue-50 rounded"
+                      title="Replay this message"
+                    >
+                      <svg class="w-3.5 h-3.5 text-gray-400 hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                      </svg>
+                    </button>
+                    
                     <!-- Delete button (appears on hover) -->
                     <button 
                       @click="deleteMessage(i, t)"
@@ -809,6 +831,17 @@
           <div>
               <template x-for="(t, i) in transcripts.filter(t => t.user_id !== 'discovery-ai')" :key="i">
                 <div class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-3 bg-white rounded-xl shadow-sm mb-2">
+                  <!-- Replay button (appears on hover) -->
+                  <button 
+                    @click="replayMessage(t)"
+                    class="absolute top-3 right-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-blue-50 rounded"
+                    title="Replay this message"
+                  >
+                    <svg class="w-3.5 h-3.5 text-gray-400 hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                  </button>
+                  
                   <!-- Delete button (appears on hover) -->
                   <button 
                     @click="deleteTranscript(i)"
@@ -1724,6 +1757,24 @@
               console.error('❌ [SSE] Event data was:', event.data);
             }
           });
+
+          this.eventSource.addEventListener('progress', (event) => {
+            console.log('⚙️ [SSE] Received progress event');
+            try {
+              const payload = JSON.parse(event.data);
+              const content = payload.content || {};
+              
+              // Find the processing message and update it
+              const processingIndex = this.transcripts.findIndex(t => t.processing && t.user_id === 'groq-ai');
+              if (processingIndex !== -1) {
+                this.transcripts[processingIndex].data = `<div class="flex items-center gap-2"><div class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div><span class="text-gray-500">${content.data}</span></div>`;
+                this.saveTranscripts();
+                console.log('✅ [SSE] Updated progress message:', content.data);
+              }
+            } catch (e) {
+              console.error('❌ [SSE] Error processing progress:', e);
+            }
+          });
         },
 
         startPollingMode() {
@@ -1866,6 +1917,41 @@
             this.saveTranscripts();
             console.log('🗑️ Deleted transcript');
           }
+        },
+
+        replayMessage(transcript) {
+          // Replay/retry a message by resending it
+          console.log('🔄 Replaying message:', transcript);
+          
+          // Determine what text to replay
+          let messageText = '';
+          
+          if (transcript.user_id === 'groq-ai' || transcript.user_id === 'system') {
+            // For AI responses, replay the original message that triggered them
+            messageText = transcript.original_message || transcript.data;
+          } else {
+            // For user messages, replay the message directly
+            messageText = transcript.original_data || transcript.data;
+          }
+          
+          // Create a new transcript with current timestamp
+          const replayedTranscript = {
+            user_id: transcript.user_id === 'groq-ai' || transcript.user_id === 'system' ? 'manual-user' : transcript.user_id,
+            user_name: transcript.user_id === 'groq-ai' || transcript.user_id === 'system' ? 'You (Replay)' : transcript.user_name,
+            data: messageText,
+            original_data: messageText,
+            timestamp: Date.now()
+          };
+          
+          // Add to transcripts
+          this.transcripts.unshift(replayedTranscript);
+          this.saveTranscripts();
+          
+          // Directly trigger the Zoom inference (bypass trigger detection)
+          console.log('🚀 Auto-submitting replayed message...');
+          this.handleZoomTrigger(replayedTranscript);
+          
+          console.log('✅ Message replayed and submitted successfully');
         },
 
         // Cleanup method for when component is destroyed

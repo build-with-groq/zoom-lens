@@ -7,14 +7,16 @@
 
 import { getAvailableTools } from "./tool-registry-unified.js";
 
-// Groq client will be injected from main.js
+// Groq client and config will be injected from main.js
 let groqClient = null;
 let SALESFORCE_MCP_URL = null;
+let MODEL_ROUTER = "openai/gpt-oss-20b"; // Default fallback
 
 // Initialize with groq client and config
 export function initializeRouter(client, config) {
   groqClient = client;
   SALESFORCE_MCP_URL = config.SALESFORCE_MCP_URL;
+  MODEL_ROUTER = config.MODEL_ROUTER || "openai/gpt-oss-20b";
 }
 
 // Enhanced AI-powered router that decides which tools and specific MCP functions to use
@@ -228,7 +230,7 @@ Response: {
 Now analyze the user's question and return ONLY valid JSON:`;
 
     const response = await groqClient.chat.completions.create({
-      model: "openai/gpt-oss-20b",
+      model: MODEL_ROUTER,
       messages: [
         {
           role: "system",

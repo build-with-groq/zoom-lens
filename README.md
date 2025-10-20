@@ -44,6 +44,36 @@ A real-time transcript streaming service for Zoom meetings using the Zoom Real-T
 
    # Optional: Custom webhook path (defaults to /webhook)
    WEBHOOK_PATH=/webhook
+   
+   # Groq API Key
+   GROQ_API_KEY=your_groq_api_key
+   
+   # Salesforce MCP Configuration
+   SALESFORCE_MCP_URL=your_salesforce_mcp_url
+   
+   # AI Model Configuration (Optional - Override to test different models)
+   # All default to their specified fallback models if not set
+   
+   # Intelligent routing decisions (default: openai/gpt-oss-20b)
+   MODEL_ROUTER=openai/gpt-oss-20b
+   
+   # Discovery mode analysis (default: openai/gpt-oss-20b)
+   MODEL_DISCOVERY=openai/gpt-oss-20b
+   
+   # Fact extraction from research (default: openai/gpt-oss-20b)
+   MODEL_EXTRACTOR=openai/gpt-oss-20b
+   
+   # Text compression/distillation (default: openai/gpt-oss-20b)
+   MODEL_COMPRESSOR=openai/gpt-oss-20b
+   
+   # Main inference with MCP tools (default: openai/gpt-oss-120b)
+   MODEL_INFERENCE=openai/gpt-oss-120b
+   
+   # Direct answers without tools (default: openai/gpt-oss-120b)
+   MODEL_DIRECT_ANSWER=openai/gpt-oss-120b
+   
+   # Multi-tool response synthesis (default: openai/gpt-oss-120b)
+   MODEL_SYNTHESIS=openai/gpt-oss-120b
    ```
 
 ## 🏃 Running the Application

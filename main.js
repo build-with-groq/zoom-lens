@@ -45,7 +45,10 @@ import {
   groqClient,
   SALESFORCE_MCP_URL,
   INSTANCE_ID,
-  bc
+  bc,
+  MODEL_DISCOVERY,
+  MODEL_EXTRACTOR,
+  MODEL_COMPRESSOR
 } from "./config.js";
 import {
   getSalesforceSessionId,
@@ -67,6 +70,34 @@ import {
   connectToSignalingWebSocket,
   connectToMediaWebSocket
 } from "./websocket-utils.js";
+
+// Helper function to broadcast progress updates to SSE clients
+function broadcastProgress(message, type = 'progress') {
+  const progressTranscript = {
+    user_id: 'groq-ai',
+    user_name: 'Groq AI Assistant',
+    data: message,
+    timestamp: Date.now(),
+    processing: true,
+    type: type
+  };
+  
+  // Broadcast to SSE clients
+  for (const client of sseClients) {
+    try {
+      client.send('event: progress\n' + 'data: ' + JSON.stringify({
+        content: progressTranscript
+      }) + '\n\n');
+    } catch (error) {
+      console.error('Error broadcasting progress:', error);
+    }
+  }
+  
+  // Store for polling clients
+  addToRecentTranscripts(progressTranscript);
+  
+  return progressTranscript;
+}
 import {
   UNIFIED_TOOL_REGISTRY,
   addTool,
@@ -665,7 +696,15 @@ app.post('/api/trigger-groq', async (c) => {
     console.log(`\n   🚀 About to call performGroqInference...\n`);
 
     // Process the inference (skip trigger detection since frontend already validated)
-    const result = await performGroqInference(transcript, user_name || 'Unknown', context || 'meeting_transcript', filteredChatHistory, true);
+    // Pass progress callback to broadcast status updates
+    const result = await performGroqInference(
+      transcript, 
+      user_name || 'Unknown', 
+      context || 'meeting_transcript', 
+      filteredChatHistory, 
+      true,
+      broadcastProgress // Pass the progress callback
+    );
 
     // Create response transcript for SSE broadcast
     const responseTranscript = {
@@ -862,7 +901,7 @@ Respond in JSON format:
 }`;
 
     const discoveryResponse = await groqClient.chat.completions.create({
-      model: "openai/gpt-oss-20b", // Using faster 20b model for quick analysis
+      model: MODEL_DISCOVERY,
       messages: [
         { role: "system", content: `You are a discovery analysis AI that identifies opportunities for providing helpful background information. Today's date is ${today}.` },
         { role: "user", content: discoveryPrompt }
@@ -935,7 +974,7 @@ Rules:
 Output format: [Single factual sentence]`;
 
           const researcherResponse = await groqClient.chat.completions.create({
-            model: "openai/gpt-oss-20b", // Using faster 20b model for quick fact extraction
+            model: MODEL_EXTRACTOR,
             messages: [
               { role: "system", content: `You are a fact extractor. Extract ONLY the single most important fact. Maximum 20 words. No preamble, no explanation, just the fact. Today's date is ${today}.` },
               { role: "user", content: researcherPrompt }
@@ -956,7 +995,7 @@ Output format: [Single factual sentence]`;
 Remove any fluff. Keep only the core fact.`;
 
           const finalDistillationResponse = await groqClient.chat.completions.create({
-            model: "openai/gpt-oss-20b", // Using faster 20b model - good enough for compression
+            model: MODEL_COMPRESSOR,
             messages: [
               { role: "system", content: `You are a text compressor. Output ONLY 1 sentence, max 15 words. Today's date is ${today}.` },
               { role: "user", content: finalDistillationPrompt }
