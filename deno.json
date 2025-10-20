@@ -3,6 +3,7 @@
   "description": "Zoom Real-Time Meeting Service (RTMS) for real-time transcript streaming",
   "tasks": {
     "serve": "deno serve --port 9995 --watch --allow-read --allow-env --allow-write --allow-net --allow-import ./main.js",
+    "test-groq": "deno run --allow-read --allow-env --allow-net ./test-groq-api.js",
     "git": "git add . && git commit -m 'Update' && git push origin main",
     "deploy": "deployctl deploy --prod --project=zoom-rtms"
   },

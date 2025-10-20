@@ -883,23 +883,12 @@ export async function performGroqInference(transcript, userName, context = 'gene
         
         const messages = [];
         
-        // Add system message (NO credentials here - they go in user message per MCP protocol)
+        // Add system message - SIMPLIFIED to reduce token bloat
         messages.push({
           role: "system",
-          content: `You are Groq AI assistant. Today's date is ${today}. Provide accurate and helpful responses using the available tools.
+          content: `You are Groq AI assistant. Today's date is ${today}. Provide accurate, helpful responses using available tools.
 
-CRITICAL INSTRUCTIONS:
-1. You are responding to the CURRENT user query only. Any chat history provided is for context ONLY - do NOT re-execute or repeat actions from previous messages. Focus ONLY on the current request.
-
-2. For Salesforce MCP tools: Credentials are provided in the user message. Call data functions directly (sf_search_leads, sf_create_note, sf_run_soql_query, etc.).
-
-3. ⚠️ CRITICAL - NO DUPLICATE TOOL CALLS: 
-   - Call each tool function EXACTLY ONCE per action
-   - Do NOT repeat the same tool call multiple times with the same arguments
-   - Do NOT call the same function twice "to make sure it works"
-   - If creating a record (lead, contact, note, etc.), call the create function ONLY ONCE
-   - If you've already called a function in this response, DO NOT call it again
-   - Each tool call should be unique and serve a distinct purpose${focusPrompt}`
+For Salesforce: Credentials are in the user message. Call functions directly (sf_search_leads, sf_create_lead, sf_run_soql_query, etc.).${focusPrompt}`
         });
         
         if (sfFocus) {
@@ -910,75 +899,10 @@ CRITICAL INSTRUCTIONS:
           });
         }
         
-        // Add chat history for context if available (wrap in XML tags)
-        // Note: chatHistory comes from frontend with newest first, so we need to reverse it
-        console.log(`\n${'='.repeat(80)}`);
-        console.log(`📚 CHAT HISTORY PROCESSING`);
-        console.log(`   Chat history exists: ${!!chatHistory}`);
-        console.log(`   Chat history length: ${chatHistory?.length || 0}`);
-        
-        // Initialize conversationHistory variable
-        let conversationHistory = '';
-        
-        if (chatHistory && chatHistory.length > 0) {
-          console.log(`   ✅ Processing chat history: ${chatHistory.length} total messages`);
-          
-          const recentHistory = chatHistory
-            .slice(0, 30) // Take first 30 (which are the newest in the reversed array)
-            .filter(msg => 
-              msg.user_id !== 'system' && 
-              msg.user_id !== 'discovery-ai' && 
-              msg.data &&
-              msg.data !== transcript && // Exclude the current request from history
-              msg.original_data !== transcript && // Also check original_data in case of corrections
-              // CRITICAL FIX: Exclude assistant messages that used MCP tools to prevent re-execution
-              !(msg.user_id === 'groq-ai' && msg.tools && msg.tools.length > 0 && msg.tools.some(t => t.category === 'mcp'))
-            )
-            .reverse(); // Reverse to get chronological order (oldest to newest)
-          
-          console.log(`   📚 Filtered history: ${recentHistory.length} messages after filtering (excluding MCP tool responses)`);
-          
-          if (recentHistory.length > 0) {
-            // Log each message for debugging
-            console.log(`\n   📚 DETAILED CHAT HISTORY (${recentHistory.length} messages):`);
-            recentHistory.forEach((msg, idx) => {
-              const role = msg.user_id === 'groq-ai' ? 'Assistant' : msg.user_name || 'User';
-              console.log(`      ${idx + 1}. ${role}: "${msg.data?.substring(0, 60)}..."`);
-            });
-            
-            const historyText = recentHistory.map((msg, idx) => {
-              const role = msg.user_id === 'groq-ai' ? 'Assistant' : msg.user_name || 'User';
-              const timestamp = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '';
-              return `[${timestamp}] ${role}: ${msg.data}`;
-            }).join('\n');
-            
-            console.log(`\n   📚 FULL FORMATTED HISTORY SENT TO AI:`);
-            console.log(`   ${'-'.repeat(80)}`);
-            console.log(historyText);
-            console.log(`   ${'-'.repeat(80)}\n`);
-            
-            // Store history to be combined with query in ONE user message
-            conversationHistory = `<previous_conversation_context>
-⚠️ IMPORTANT: The messages below are PAST conversation history for context ONLY.
-These messages have ALREADY been processed and responded to. 
-DO NOT re-execute any actions or tools from this history.
-DO NOT answer questions that were already answered below.
-Only use this history to understand context for the NEW current request that follows.
-
-${historyText}
-</previous_conversation_context>
-
-`;
-          } else {
-            console.log(`   ⚠️ No messages left after filtering (all were system/discovery/current)`);
-          }
-        } else {
-          console.log(`   ❌ No chat history provided or empty`);
-        }
-        console.log(`${'='.repeat(80)}\n`);
-        
-        // Build the user message: credentials (if SF) + history + query - ALL IN ONE MESSAGE
+        // Build the user message based on router's extracted intent
+        // SIMPLIFIED APPROACH: Use router's extracted params to create a clean, directed request
         let userMessageContent = '';
+        let directedRequest = transcript; // Default to original transcript
         
         // Add Salesforce credentials at the start if using Salesforce tools (per MCP protocol)
         if (sfCreds && routingDecision.tools.includes('salesforce')) {
@@ -990,18 +914,24 @@ ${historyText}
           
           userMessageContent = `${JSON.stringify(credentialsObj, null, 2)}\n\n`;
           console.log(`   🔐 Adding Salesforce credentials to user message`);
+          
+          // Extract the Salesforce tool details from routing decision
+          const sfToolDetail = routingDecision.toolDetails?.find(t => t.tool_id === 'salesforce');
+          
+          if (sfToolDetail && sfToolDetail.params && Object.keys(sfToolDetail.params).length > 0) {
+            // Router extracted specific params - create a directed request
+            console.log(`   🎯 Router extracted params:`, sfToolDetail.params);
+            
+            // Build a clean, directed request based on extracted params
+            if (sfToolDetail.functions && sfToolDetail.functions.length > 0) {
+              directedRequest = `${transcript}`;
+              console.log(`   ✅ Using directed request with router-extracted context`);
+            }
+          }
         }
         
-        // Add conversation history if available
-        userMessageContent += conversationHistory;
-        
-        // Add the current request
-        userMessageContent += `<current_request>
-🆕 NEW REQUEST TO RESPOND TO NOW:
-${transcript}
-
-This is the ONLY request you should respond to. Use the conversation history above ONLY for context.
-</current_request>`;
+        // MINIMAL user message: credentials + simple request (matching successful curl pattern)
+        userMessageContent += directedRequest;
         
         // Push the complete user message
         messages.push({
@@ -1009,7 +939,8 @@ This is the ONLY request you should respond to. Use the conversation history abo
           content: userMessageContent
         });
         
-        console.log(`   ✅ User message created (credentials: ${sfCreds && routingDecision.tools.includes('salesforce') ? 'YES' : 'NO'}, history: ${conversationHistory.length > 0 ? 'YES' : 'NO'})`);
+        console.log(`   ✅ User message created (credentials: ${sfCreds && routingDecision.tools.includes('salesforce') ? 'YES' : 'NO'})`);
+        console.log(`   📝 User message length: ${userMessageContent.length} chars`);
 
         console.log(`\n   📤 REQUEST DETAILS:`);
         console.log(`      Model: openai/gpt-oss-120b`);
@@ -1024,7 +955,7 @@ This is the ONLY request you should respond to. Use the conversation history abo
           } else if (msg.role === 'tool') {
             console.log(`      ${idx + 1}. [TOOL] ${msg.name}: ${msg.content?.substring(0, 40) || 'empty'}...`);
           } else if (msg.content && msg.content.includes('access_token')) {
-            console.log(`      ${idx + 1}. [USER] Salesforce credentials + history + query`);
+            console.log(`      ${idx + 1}. [USER] Credentials + "${directedRequest.substring(0, 50)}..."`);
           } else if (msg.content) {
             console.log(`      ${idx + 1}. [${msg.role.toUpperCase()}] "${msg.content.substring(0, 60)}..."`);
           } else {
