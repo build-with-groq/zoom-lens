@@ -18,7 +18,7 @@ async function testGroqAPI() {
     messages: [
       {
         role: "user",
-        content: '{\n  "access_token": "00Dfj000008qDxR!AQEAQCd.srtEruBvtjyj1OqXG2o68e5_S1WM8JqBicnQ5pKqF68Smz89GPWsLfwvirAj08UzJJXtLB9QwIBXrFLoMmD6nUB0",\n  "instance_url": "https://orgfarm-a4d4fb7858-dev-ed.develop.my.salesforce.com",\n  "state": "login_1760982924862_pe322vgt5"\n}\n\nget the last 10 leads from salesforce'
+        content: '{\n  "access_token": "12345",\n  "instance_url": "https://orgfarm-a4d4fb7858-dev-ed.develop.my.salesforce.com",\n  "state": "login_12345"\n}\n\nget the last 10 leads from salesforce'
       },
       {
         role: "assistant",

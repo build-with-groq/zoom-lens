@@ -2612,7 +2612,10 @@
         },
 
         // Send trigger request to backend with original transcript data
-        async sendTriggerRequest(transcript) {
+        async sendTriggerRequest(transcript, retryCount = 0) {
+          const MAX_RETRIES = 3;
+          const TIMEOUT_MS = 3000; // 3 second timeout
+          
           try {
             // Get custom MCP configs from the custom tools component if available
             let customMcps = [];
@@ -2643,85 +2646,116 @@
               console.warn('Failed to load Salesforce credentials from localStorage:', e);
             }
 
-            const response = await fetch('/api/trigger-groq', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                transcript: transcript.original_data || transcript.data, // Send original uncorrected text, fallback to data
-                user_name: transcript.user_name,
-                user_id: transcript.user_id,
-                timestamp: transcript.timestamp,
-                context: 'meeting_transcript', // Same context as before
-                chat_history: this.transcripts, // Send full chat history for context
-                custom_mcps: customMcps, // Send custom MCP configurations
-                salesforce_credentials: salesforceCredentials // Send Salesforce credentials for serverless compatibility
-              })
-            });
+            // Create an AbortController for timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-            if (!response.ok) {
-              throw new Error(`HTTP ${response.status}`);
-            }
+            try {
+              const response = await fetch('/api/trigger-groq', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  transcript: transcript.original_data || transcript.data, // Send original uncorrected text, fallback to data
+                  user_name: transcript.user_name,
+                  user_id: transcript.user_id,
+                  timestamp: transcript.timestamp,
+                  context: 'meeting_transcript', // Same context as before
+                  chat_history: this.transcripts, // Send full chat history for context
+                  custom_mcps: customMcps, // Send custom MCP configurations
+                  salesforce_credentials: salesforceCredentials // Send Salesforce credentials for serverless compatibility
+                }),
+                signal: controller.signal
+              });
 
-            const result = await response.json();
+              clearTimeout(timeoutId);
 
-            // Check if backend returned the response transcript directly (serverless fallback)
-            if (result.response_transcript) {
-
-              // Use the AI response data as-is (backend already processed it)
-              const responseData = result.response_transcript.data || '';
-
-              // Build the AI response transcript
-              const aiTranscript = {
-                user_id: result.response_transcript.user_id,
-                user_name: result.response_transcript.user_name,
-                data: responseData,
-                timestamp: result.response_transcript.timestamp || Date.now(),
-                tools: result.response_transcript.tools,
-                routing: result.response_transcript.routing,
-                original_message: result.response_transcript.original_message
-              };
-
-              // Replace processing message if present; otherwise prepend
-              const processingMessageIndex = this.transcripts.findIndex(t =>
-                t.processing &&
-                t.originalTranscript &&
-                (t.originalTranscript.data === transcript.original_data ||
-                 t.originalTranscript.data === transcript.data)
-              );
-
-              if (processingMessageIndex !== -1) {
-                this.transcripts[processingMessageIndex] = {
-                  user_id: aiTranscript.user_id,
-                  user_name: aiTranscript.user_name,
-                  data: aiTranscript.data,
-                  timestamp: aiTranscript.timestamp,
-                  tools: aiTranscript.tools,
-                  routing: aiTranscript.routing,
-                  original_message: aiTranscript.original_message,
-                  completed: true
-                };
-                console.log('✅ Replaced processing message with AI response:', {
-                  user_id: aiTranscript.user_id,
-                  data: aiTranscript.data?.slice(0, 50)
-                });
-              } else {
-                this.transcripts.unshift(aiTranscript);
-                console.log('✅ Added new AI response:', {
-                  user_id: aiTranscript.user_id,
-                  data: aiTranscript.data?.slice(0, 50)
-                });
+              if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
               }
 
-              this.saveTranscripts();
-            } else {
-              // The backend will handle adding the response to transcripts via SSE
-              // No need to do anything here - the response will come through the normal transcript stream
+              const result = await response.json();
+
+              // Check if backend returned the response transcript directly (serverless fallback)
+              if (result.response_transcript) {
+
+                // Use the AI response data as-is (backend already processed it)
+                const responseData = result.response_transcript.data || '';
+
+                // Build the AI response transcript
+                const aiTranscript = {
+                  user_id: result.response_transcript.user_id,
+                  user_name: result.response_transcript.user_name,
+                  data: responseData,
+                  timestamp: result.response_transcript.timestamp || Date.now(),
+                  tools: result.response_transcript.tools,
+                  routing: result.response_transcript.routing,
+                  original_message: result.response_transcript.original_message
+                };
+
+                // Replace processing message if present; otherwise prepend
+                const processingMessageIndex = this.transcripts.findIndex(t =>
+                  t.processing &&
+                  t.originalTranscript &&
+                  (t.originalTranscript.data === transcript.original_data ||
+                   t.originalTranscript.data === transcript.data)
+                );
+
+                if (processingMessageIndex !== -1) {
+                  this.transcripts[processingMessageIndex] = {
+                    user_id: aiTranscript.user_id,
+                    user_name: aiTranscript.user_name,
+                    data: aiTranscript.data,
+                    timestamp: aiTranscript.timestamp,
+                    tools: aiTranscript.tools,
+                    routing: aiTranscript.routing,
+                    original_message: aiTranscript.original_message,
+                    completed: true
+                  };
+                  console.log('✅ Replaced processing message with AI response:', {
+                    user_id: aiTranscript.user_id,
+                    data: aiTranscript.data?.slice(0, 50)
+                  });
+                } else {
+                  this.transcripts.unshift(aiTranscript);
+                  console.log('✅ Added new AI response:', {
+                    user_id: aiTranscript.user_id,
+                    data: aiTranscript.data?.slice(0, 50)
+                  });
+                }
+
+                this.saveTranscripts();
+              } else {
+                // The backend will handle adding the response to transcripts via SSE
+                // No need to do anything here - the response will come through the normal transcript stream
+              }
+
+            } catch (fetchError) {
+              clearTimeout(timeoutId);
+              
+              // Check if this is a timeout error
+              if (fetchError.name === 'AbortError') {
+                console.warn(`⏱️ Request timeout (attempt ${retryCount + 1}/${MAX_RETRIES + 1})`);
+                
+                // Retry if we haven't exceeded max retries
+                if (retryCount < MAX_RETRIES) {
+                  console.log(`🔄 Retrying request silently...`);
+                  return this.sendTriggerRequest(transcript, retryCount + 1);
+                } else {
+                  console.error('❌ Max retries exceeded, giving up');
+                  throw new Error('Request timed out after multiple retries');
+                }
+              }
+              
+              // Re-throw non-timeout errors
+              throw fetchError;
             }
 
           } catch (error) {
             console.error('❌ Trigger request failed:', error);
+            // Error will be handled by the caller in handleZoomTrigger
+            throw error;
           }
         }
       }
