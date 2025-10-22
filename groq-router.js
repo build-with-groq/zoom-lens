@@ -29,7 +29,7 @@ export async function intelligentRouter(question, userName, context = {}, chatHi
 
     // Prepare chat history context (last 5 messages for context)
     const recentHistory = chatHistory.slice(-5).map(msg => ({
-      role: msg.user_id === 'groq-ai' ? 'assistant' : 'user',
+      role: msg.user_id === 'zoom-ai' ? 'assistant' : 'user',
       content: msg.data,
       timestamp: msg.timestamp
     }));
@@ -65,7 +65,7 @@ Examples: ${tool.examples.join('; ')}`;
     });
 
     // Dynamically generate system prompt from registry with detailed MCP function info
-    const systemPrompt = `You are an intelligent routing system for Groq AI. Your task is to analyze user questions and select the most appropriate tools and specific functions to use.
+    const systemPrompt = `You are an intelligent routing system for Zoom AI. Your task is to analyze user questions and select the most appropriate tools and specific functions to use.
 
 TODAY'S DATE: ${today}
 

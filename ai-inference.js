@@ -31,7 +31,7 @@ export async function intelligentRouter(question, userName, context = {}, chatHi
       .slice(0, 30)
       .reverse() // Reverse to get chronological order (oldest to newest)
       .map(msg => ({
-        role: msg.user_id === 'groq-ai' || msg.user_id === 'discovery-ai' ? 'assistant' : 'user',
+        role: msg.user_id === 'zoom-ai' || msg.user_id === 'discovery-ai' ? 'assistant' : 'user',
         content: msg.data,
         timestamp: msg.timestamp,
         tools: msg.tools || []
@@ -82,7 +82,7 @@ Examples: ${tool.examples.join('; ')}`;
       : '';
     
     // Dynamically generate system prompt from registry with detailed MCP function info
-    const systemPrompt = `You are an intelligent routing system for Groq AI. Your task is to analyze user questions and select the most appropriate tools and specific functions to use.
+    const systemPrompt = `You are an intelligent routing system for Zoom AI. Your task is to analyze user questions and select the most appropriate tools and specific functions to use.
 
 TODAY'S DATE: ${today}
 
@@ -630,7 +630,7 @@ export async function getWeather(location) {
       messages: [
         {
           role: "system",
-          content: `You are Groq AI, a helpful weather assistant. TODAY'S DATE: ${today}. Respond with a single short line.`
+          content: `You are Zoom AI, a helpful weather assistant. TODAY'S DATE: ${today}. Respond with a single short line.`
         },
         {
           role: "user",
@@ -654,7 +654,7 @@ export async function getWeather(location) {
 }
 
 // Perform web search and/or code execution using Groq compound model
-export async function performWebSearch(query) {
+export async function performWebSearch(query, context = {}) {
   try {
     const today = new Date().toLocaleDateString('en-US', { 
       weekday: 'long', 
@@ -663,18 +663,53 @@ export async function performWebSearch(query) {
       day: 'numeric' 
     });
 
+    const messages = [
+      {
+        role: "system",
+        content: `You are Zoom AI, a helpful assistant with web search and code execution capabilities. TODAY'S DATE: ${today}`
+      }
+    ];
+
+    // Add chat history for conversational context if available
+    const chatHistory = context.chatHistory || [];
+    if (chatHistory && chatHistory.length > 0) {
+      const recentHistory = chatHistory
+        .slice(0, 20) // Keep last 20 messages for compound tool
+        .filter(msg => 
+          msg.user_id !== 'system' && 
+          msg.user_id !== 'discovery-ai' && 
+          msg.data &&
+          msg.data !== query &&
+          msg.original_data !== query
+        )
+        .reverse(); // Chronological order
+      
+      if (recentHistory.length > 0) {
+        const historyText = recentHistory.map((msg) => {
+          const role = msg.user_id === 'zoom-ai' ? 'Assistant' : msg.user_name || 'User';
+          return `${role}: ${msg.data}`;
+        }).join('\n');
+        
+        messages.push({
+          role: "user",
+          content: `<conversation_context>
+Previous conversation for reference:
+
+${historyText}
+</conversation_context>`
+        });
+      }
+    }
+
+    // Add the current query
+    messages.push({
+      role: "user",
+      content: query, // Compound model will figure out if it needs web search, code execution, or both
+    });
+
     const response = await groqClient.chat.completions.create({
       model: "groq/compound-mini",
-      messages: [
-        {
-          role: "system",
-          content: `You are Groq AI, a helpful assistant with web search and code execution capabilities. TODAY'S DATE: ${today}`
-        },
-        {
-          role: "user",
-          content: query, // Pass query directly - compound model will figure out if it needs web search, code execution, or both
-        },
-      ],
+      messages: messages,
     });
 
     return {
@@ -701,7 +736,7 @@ export async function answerDirectly(question, context = {}) {
       day: 'numeric' 
     });
 
-    const systemPrompt = `You are Groq AI, a helpful AI assistant. TODAY'S DATE: ${today}
+    const systemPrompt = `You are Zoom AI, a helpful AI assistant. TODAY'S DATE: ${today}
 
 Context: Meeting transcript
 User: ${context.userName || 'Unknown'}
@@ -731,7 +766,7 @@ Provide helpful, accurate responses. Use conversation history to understand cont
       
       if (recentHistory.length > 0) {
         const historyText = recentHistory.map((msg) => {
-          const role = msg.user_id === 'groq-ai' ? 'Assistant' : msg.user_name || 'User';
+          const role = msg.user_id === 'zoom-ai' ? 'Assistant' : msg.user_name || 'User';
           return `${role}: ${msg.data}`;
         }).join('\n');
         
@@ -947,7 +982,7 @@ export async function performGroqInference(transcript, userName, context = 'gene
         // Add system message - SIMPLIFIED to reduce token bloat
         messages.push({
           role: "system",
-          content: `You are Groq AI assistant. Today's date is ${today}. Provide accurate, helpful responses using available tools.
+          content: `You are Zoom AI assistant. Today's date is ${today}. Provide accurate, helpful responses using available tools.
 
 For Salesforce: Credentials are in the user message. Call functions directly (sf_search_leads, sf_create_lead, sf_run_soql_query, etc.).${focusPrompt}`
         });
@@ -1442,7 +1477,7 @@ For Salesforce: Credentials are in the user message. Call functions directly (sf
       // If we have multiple built-in tools, create a summary response
       if (routingDecision.tools.length > 1 && toolResults.length > 1) {
         try {
-          const summaryPrompt = `You are Groq AI. The user asked: "${transcript}"
+          const summaryPrompt = `You are Zoom AI. The user asked: "${transcript}"
 
 I used these tools: ${toolsUsed.map(t => t.name).join(', ')}
 

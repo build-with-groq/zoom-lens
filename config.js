@@ -24,7 +24,7 @@ export const SALESFORCE_MCP_URL = Deno.env.get("SALESFORCE_MCP_URL");
 console.log(`🔧 Salesforce MCP URL: ${SALESFORCE_MCP_URL || 'NOT SET - Please set SALESFORCE_MCP_URL in .env'}`);
 
 // AI Model configuration - centralized model selection with env variable overrides
-export const MODEL_ROUTER = Deno.env.get("MODEL_ROUTER") || "openai/gpt-oss-20b"; // Intelligent routing decisions
+export const MODEL_ROUTER = Deno.env.get("MODEL_ROUTER") || "openai/gpt-oss-120b"; // Intelligent routing decisions
 // export const MODEL_ROUTER = Deno.env.get("MODEL_ROUTER") || "llama-3.1-8b-instant"; // Intelligent routing decisions
 
 export const MODEL_DISCOVERY = Deno.env.get("MODEL_DISCOVERY") || "openai/gpt-oss-120b"; // Discovery analysis

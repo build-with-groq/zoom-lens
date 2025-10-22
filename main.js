@@ -74,8 +74,8 @@ import {
 // Helper function to broadcast progress updates to SSE clients
 function broadcastProgress(message, type = 'progress') {
   const progressTranscript = {
-    user_id: 'groq-ai',
-    user_name: 'Groq AI Assistant',
+    user_id: 'zoom-ai',
+    user_name: 'Zoom AI Assistant',
     data: message,
     timestamp: Date.now(),
     processing: true,
@@ -662,12 +662,33 @@ app.post('/api/trigger-groq', async (c) => {
       has_transcript: !!body.transcript,
       transcript_length: body.transcript?.length || 0,
       user_name: body.user_name,
+      user_id: body.user_id,
       context: body.context,
       chat_history_length: body.chat_history?.length || 0,
       has_salesforce_credentials: !!body.salesforce_credentials
     });
     
     const { transcript, user_name, context, chat_history, user_id, timestamp, salesforce_credentials } = body;
+    
+    // CRITICAL SAFETY CHECK: Reject AI-generated messages immediately
+    const isAIMessage = user_id === 'zoom-ai' || 
+                       user_id === 'discovery-ai' || 
+                       user_id === 'system' ||
+                       user_name === 'Zoom AI Assistant' ||
+                       user_name === 'Discovery';
+    
+    if (isAIMessage) {
+      console.error(`   🚫 REJECTED: AI message sent to backend!`, {
+        user_id,
+        user_name,
+        transcript_preview: transcript?.substring(0, 100)
+      });
+      return c.json({
+        success: false,
+        error: 'AI-generated messages cannot be reprocessed',
+        blocked: true
+      }, 400);
+    }
     
     // Deduplication check: prevent processing same request within dedup window
     const requestKey = `${transcript.trim()}_${user_name}`;
@@ -734,8 +755,8 @@ app.post('/api/trigger-groq', async (c) => {
 
     // Create response transcript for SSE broadcast
     const responseTranscript = {
-      user_id: 'groq-ai',
-      user_name: 'Groq AI Assistant',
+      user_id: 'zoom-ai',
+      user_name: 'Zoom AI Assistant',
       data: result.response || 'I processed your request but couldn\'t generate a response.',
       timestamp: Date.now(),
       tools: result.tools || [],
@@ -776,7 +797,7 @@ app.post('/api/trigger-groq', async (c) => {
     if (result.error) {
       const errorTranscript = {
         user_id: 'system',
-        user_name: 'Groq AI',
+        user_name: 'Zoom AI',
         data: `⚠️ Processing completed with error: ${result.error}`,
         timestamp: Date.now(),
         error: true
