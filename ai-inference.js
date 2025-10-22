@@ -9,7 +9,8 @@ import {
   MODEL_ROUTER,
   MODEL_INFERENCE,
   MODEL_DIRECT_ANSWER,
-  MODEL_SYNTHESIS
+  MODEL_SYNTHESIS,
+  ROUTER_RETRY_DELAY_MS
 } from "./config.js";
 import { getAvailableTools } from "./tool-registry-unified.js";
 import { getSalesforceSessionId } from "./auth-utils.js";
@@ -362,22 +363,82 @@ Response: {
 
 Now analyze the user's question and return ONLY valid JSON:`;
 
-    const response = await groqClient.chat.completions.create({
-      model: MODEL_ROUTER,
-      messages: [
-        {
-          role: "system",
-          content: systemPrompt
-        },
-        {
-          role: "user",
-          content: question
+    // Race-based retry system: Fire initial request, then fire a retry after configured delay
+    // Whichever completes first wins
+    const RETRY_DELAY_MS = ROUTER_RETRY_DELAY_MS;
+    
+    console.log(`🏁 ROUTING: Starting race-based router request (retry after ${RETRY_DELAY_MS}ms)...`);
+    
+    const createRouterRequest = () => {
+      return groqClient.chat.completions.create({
+        model: MODEL_ROUTER,
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt
+          },
+          {
+            role: "user",
+            content: question
+          }
+        ],
+        temperature: 0.1, // Low temperature for consistent JSON output
+        max_tokens: 1000, // More tokens for detailed function/param extraction
+        response_format: { type: "json_object" } // Force JSON response
+      });
+    };
+    
+    // Fire the first request immediately
+    const firstRequest = createRouterRequest();
+    let firstRequestFinished = false;
+    
+    // Set up the retry request to fire after delay
+    const retryPromise = new Promise((resolve, reject) => {
+      const retryTimer = setTimeout(async () => {
+        if (!firstRequestFinished) {
+          console.log(`🔄 ROUTING: First request taking too long, firing retry request...`);
+          try {
+            const retryResponse = await createRouterRequest();
+            console.log(`✅ ROUTING: Retry request completed first!`);
+            resolve(retryResponse);
+          } catch (error) {
+            console.error(`❌ ROUTING: Retry request failed:`, error);
+            reject(error);
+          }
+        } else {
+          // First request already finished, no need for retry
+          resolve(null);
         }
-      ],
-      temperature: 0.1, // Low temperature for consistent JSON output
-      max_tokens: 1000, // More tokens for detailed function/param extraction
-      response_format: { type: "json_object" } // Force JSON response
+      }, RETRY_DELAY_MS);
     });
+    
+    // Race between the first request and the retry
+    let response;
+    try {
+      response = await Promise.race([
+        firstRequest.then(r => {
+          firstRequestFinished = true;
+          console.log(`✅ ROUTING: First request completed!`);
+          return r;
+        }),
+        retryPromise
+      ]);
+      
+      // If retry returned null (first finished), wait for first
+      if (!response) {
+        response = await firstRequest;
+      }
+    } catch (error) {
+      // If race fails, try to wait for the first request as fallback
+      console.error(`⚠️ ROUTING: Race failed, falling back to first request:`, error);
+      try {
+        response = await firstRequest;
+        console.log(`✅ ROUTING: Fallback to first request succeeded`);
+      } catch (fallbackError) {
+        console.error(`❌ ROUTING: Both requests failed:`, fallbackError);
+        throw fallbackError;
+      }
+    }
 
     const resultText = response.choices[0]?.message?.content || '';
     console.log(`🔍 ROUTING: AI raw response: "${resultText}"`);

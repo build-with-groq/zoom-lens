@@ -315,8 +315,9 @@
                   </div>
                   
                   <div x-show="!t.processing" class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
-                    <!-- Replay button (appears on hover) -->
+                    <!-- Replay button (appears on hover) - Hidden for AI responses -->
                     <button 
+                      x-show="t.original_message"
                       @click="replayMessage(t)"
                       class="absolute top-3 right-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-blue-50 rounded"
                       title="Replay this message"
@@ -413,8 +414,9 @@
                 <div>
                   <!-- Processing messages and regular AI responses: same full container format -->
                   <div x-show="t.user_id === 'groq-ai'" class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
-                    <!-- Replay button (appears on hover) -->
+                    <!-- Replay button (appears on hover) - Hidden for AI responses -->
                     <button 
+                      x-show="t.original_message"
                       @click="replayMessage(t)"
                       class="absolute top-3 right-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-blue-50 rounded"
                       title="Replay this message"
@@ -878,8 +880,9 @@
           <div>
               <template x-for="(t, i) in transcripts.filter(t => t.user_id !== 'discovery-ai')" :key="i">
                 <div class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-3 bg-white rounded-xl shadow-sm mb-2">
-                  <!-- Replay button (appears on hover) -->
+                  <!-- Replay button (appears on hover) - Hidden for AI responses, only shown for user messages -->
                   <button 
+                    x-show="t.user_id !== 'groq-ai' && t.user_id !== 'system'"
                     @click="replayMessage(t)"
                     class="absolute top-3 right-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-blue-50 rounded"
                     title="Replay this message"
@@ -1998,7 +2001,8 @@
             user_name: transcript.user_id === 'groq-ai' || transcript.user_id === 'system' ? 'You (Replay)' : transcript.user_name,
             data: messageText,
             original_data: messageText,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            isManualInput: true // Flag to bypass mic check
           };
           
           // Add to transcripts
@@ -2044,7 +2048,8 @@
             data: correctedData,
             original_data: originalData,
             timestamp: Date.now() - Math.random() * 60000, // Random time within last minute
-            corrected: correctedData !== originalData
+            corrected: correctedData !== originalData,
+            isManualInput: true // Flag to bypass mic check
           };
 
           this.transcripts.unshift(weatherTranscript);
@@ -2078,7 +2083,8 @@
             user_id: randomUser.id,
             user_name: randomUser.name,
             data: randomQuery,
-            timestamp: Date.now() - Math.random() * 60000
+            timestamp: Date.now() - Math.random() * 60000,
+            isManualInput: true // Flag to bypass mic check
           };
 
           this.transcripts.unshift(hfTranscript);
@@ -2112,7 +2118,8 @@
             user_name: randomUser.name,
             data: compoundQueries[Math.floor(Math.random() * compoundQueries.length)],
             original_data: null,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            isManualInput: true // Flag to bypass mic check
           };
           
           t.original_data = t.data;
@@ -2146,7 +2153,8 @@
             user_id: randomUser.id,
             user_name: randomUser.name,
             data: randomQuery,
-            timestamp: Date.now() - Math.random() * 60000
+            timestamp: Date.now() - Math.random() * 60000,
+            isManualInput: true // Flag to bypass mic check
           };
 
           this.transcripts.unshift(parallelTranscript);
@@ -2180,7 +2188,8 @@
             user_id: randomUser.id,
             user_name: randomUser.name,
             data: randomQuery,
-            timestamp: Date.now() - Math.random() * 60000
+            timestamp: Date.now() - Math.random() * 60000,
+            isManualInput: true // Flag to bypass mic check
           };
 
           this.transcripts.unshift(generalTranscript);
@@ -2213,7 +2222,8 @@
             user_id: randomUser.id,
             user_name: randomUser.name,
             data: randomQuery,
-            timestamp: Date.now() - Math.random() * 60000
+            timestamp: Date.now() - Math.random() * 60000,
+            isManualInput: true // Flag to bypass mic check
           };
 
           this.transcripts.unshift(sfTranscript);
