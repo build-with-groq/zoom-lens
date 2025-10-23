@@ -23,7 +23,11 @@ export async function intelligentRouter(question, userName, context = {}, chatHi
     // Get routing information from unified registry
     const availableTools = getAvailableTools();
 
-    console.log(`ROUTING: Analyzing question: "${question}" from user: ${userName}`);
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`🔍 ROUTING: Analyzing question: "${question}"`);
+    console.log(`   User: ${userName}`);
+    console.log(`   Chat history: ${chatHistory.length} messages (using last ${Math.min(30, chatHistory.length)} for context)`);
+    console.log(`${'='.repeat(80)}`);
 
     // Prepare chat history context (last 30 messages for context)
     // Note: chatHistory comes from frontend with newest first, so take first 30 and reverse
@@ -92,14 +96,17 @@ CRITICAL INSTRUCTIONS:
 3. The JSON must start with { and end with }
 4. For MCP tools, specify which specific functions should be called
 5. Extract parameters from the user's question when possible
-6. **IMPORTANT**: You are ONLY routing the CURRENT question below - do NOT route or take action on any messages from chat history
-7. **CONTEXT AWARENESS**: Use chat history to understand implicit references (e.g., "update it" likely refers to the last mentioned Salesforce record)${contextHint}
+6. **CONTEXT-AWARE ROUTING**: 
+   - Route ONLY the CURRENT question, but USE the conversation context to understand it fully
+   - If the current question is a FOLLOW-UP (asks about "this", "that", "their goal", "what about X"), consider it part of the ongoing conversation
+   - If the current question refers to topics from previous messages, the tool you select MUST have access to that context
+   - For implicit references (e.g., "update it" refers to the last mentioned Salesforce record), use chat history to understand what "it" means${contextHint}
 
 CURRENT QUESTION TO ANALYZE: "${question}"
 USER: ${userName}
 
-RECENT CONVERSATION CONTEXT (for understanding references only):
-${recentHistory.slice(-5).map(msg => `${msg.role === 'assistant' ? 'Assistant' : 'User'}: ${msg.content?.substring(0, 150)}...`).join('\n')}
+RECENT CONVERSATION CONTEXT (for understanding references and follow-up questions):
+${recentHistory.slice(-8).map(msg => `${msg.role === 'assistant' ? 'Assistant' : 'User'}: ${msg.content?.substring(0, 200)}...`).join('\n')}
 
 AVAILABLE TOOLS AND FUNCTIONS:
 ${toolsDescription}
@@ -666,15 +673,29 @@ export async function performWebSearch(query, context = {}) {
     const messages = [
       {
         role: "system",
-        content: `You are Zoom AI, a helpful assistant with web search and code execution capabilities. TODAY'S DATE: ${today}`
+        content: `You are Zoom AI, a helpful assistant with web search and code execution capabilities. TODAY'S DATE: ${today}
+
+**CRITICAL CONTEXT INSTRUCTIONS**:
+- The user may ask FOLLOW-UP questions that refer to previous messages in the conversation
+- ALWAYS read the <conversation_context> section below to understand what the user is referring to
+- If the user says "what about X" or "what's their goal" or "tell me more", look at recent messages to understand the full context
+- Combine information from the conversation history with your web search results to provide complete answers`
       }
     ];
 
     // Add chat history for conversational context if available
+    // Use contextStrategy to determine how much context to include
+    const contextStrategy = context.contextStrategy || 'full'; // Default to full context
     const chatHistory = context.chatHistory || [];
+    
     if (chatHistory && chatHistory.length > 0) {
+      // Adjust context amount based on strategy:
+      // - 'minimal': Last 3-5 messages only (for command-style queries)
+      // - 'full': Last 20 messages (for conversational/research queries)
+      const contextLimit = contextStrategy === 'minimal' ? 5 : 20;
+      
       const recentHistory = chatHistory
-        .slice(0, 20) // Keep last 20 messages for compound tool
+        .slice(0, contextLimit)
         .filter(msg => 
           msg.user_id !== 'system' && 
           msg.user_id !== 'discovery-ai' && 
@@ -683,6 +704,8 @@ export async function performWebSearch(query, context = {}) {
           msg.original_data !== query
         )
         .reverse(); // Chronological order
+      
+      console.log(`🔍 performWebSearch: Using ${contextStrategy} context strategy (${recentHistory.length}/${contextLimit} messages)`);
       
       if (recentHistory.length > 0) {
         const historyText = recentHistory.map((msg) => {
@@ -708,7 +731,7 @@ ${historyText}
     });
 
     const response = await groqClient.chat.completions.create({
-      model: "groq/compound-mini",
+      model: "groq/compound",
       messages: messages,
     });
 
@@ -741,7 +764,12 @@ export async function answerDirectly(question, context = {}) {
 Context: Meeting transcript
 User: ${context.userName || 'Unknown'}
 
-Provide helpful, accurate responses. Use conversation history to understand context and references.`;
+**CRITICAL CONTEXT INSTRUCTIONS**:
+- This is a CONVERSATIONAL context - maintain the thread of the conversation
+- The user may ask FOLLOW-UP questions that refer to previous messages
+- ALWAYS read the <previous_conversation> section below to understand what the user is referring to
+- If the user says "what about X", "what's their goal", "tell me more", or asks a clarifying question, use the conversation history to provide context
+- Maintain conversation continuity and reference previous topics naturally`;
 
     const messages = [
       {
@@ -751,10 +779,17 @@ Provide helpful, accurate responses. Use conversation history to understand cont
     ];
 
     // Add chat history if available
+    // Direct answer is almost always conversational, so default to full context
+    const contextStrategy = context.contextStrategy || 'full';
     const chatHistory = context.chatHistory || [];
+    
     if (chatHistory && chatHistory.length > 0) {
+      // Direct answer typically needs full context since it's used for conversational queries
+      // But respect minimal strategy if explicitly set (rare case)
+      const contextLimit = contextStrategy === 'minimal' ? 5 : 30;
+      
       const recentHistory = chatHistory
-        .slice(0, 30)
+        .slice(0, contextLimit)
         .filter(msg => 
           msg.user_id !== 'system' && 
           msg.user_id !== 'discovery-ai' && 
@@ -763,6 +798,8 @@ Provide helpful, accurate responses. Use conversation history to understand cont
           msg.original_data !== question
         )
         .reverse();
+      
+      console.log(`💬 answerDirectly: Using ${contextStrategy} context strategy (${recentHistory.length}/${contextLimit} messages)`);
       
       if (recentHistory.length > 0) {
         const historyText = recentHistory.map((msg) => {
@@ -863,6 +900,31 @@ export async function performGroqInference(transcript, userName, context = 'gene
     console.log(`   Reasoning: "${routingDecision.reasoning}"`);
     console.log(`   Primary Intent: ${routingDecision.primaryIntent}`);
     console.log(`   Confidence: ${routingDecision.confidence}`);
+    
+    // CRITICAL: Determine context strategy based on tool types
+    // MCP/Command tools need MINIMAL context to avoid confusion
+    // Conversational/Research tools need FULL context to maintain thread
+    const hasMcpTools = routingDecision.tools.some(tool => 
+      ['salesforce', 'huggingface', 'parallel_search'].includes(tool)
+    );
+    const hasConversationalTools = routingDecision.tools.some(tool => 
+      ['direct_answer', 'groq_compound', 'weather'].includes(tool)
+    );
+    
+    // Analyze if the question is a follow-up/reference to previous messages
+    const isFollowUpQuestion = /^(what about|tell me more|what's their|what is their|and what|how about|what if|why|how|explain|elaborate)/i.test(transcript.trim()) ||
+                               /(this|that|these|those|it|they|them|their)\b/i.test(transcript);
+    
+    const contextStrategy = hasMcpTools && !isFollowUpQuestion ? 'minimal' : 'full';
+    console.log(`   Context Strategy: ${contextStrategy.toUpperCase()} (${
+      contextStrategy === 'minimal' 
+        ? 'MCP tool - using minimal context to avoid confusion' 
+        : 'Conversational/follow-up - using full context to maintain thread'
+    })`);
+    
+    // Store context strategy in routing decision for later use
+    routingDecision.contextStrategy = contextStrategy;
+    routingDecision.isFollowUpQuestion = isFollowUpQuestion;
     
     // Broadcast routing decision to frontend
     if (progressCallback) {
@@ -1420,8 +1482,14 @@ For Salesforce: Credentials are in the user message. Call functions directly (sf
               result = await toolConfig.handler(location);
               result.location = location;
             } else {
-              // Pass chatHistory to all builtin tools so they have conversation context
-              result = await toolConfig.handler(transcript, { userName, context, chatHistory });
+              // Pass chatHistory AND contextStrategy to all builtin tools
+              result = await toolConfig.handler(transcript, { 
+                userName, 
+                context, 
+                chatHistory,
+                contextStrategy: routingDecision.contextStrategy,
+                isFollowUpQuestion: routingDecision.isFollowUpQuestion
+              });
             }
           } else {
             console.warn(`No handler found for built-in tool: ${toolName}`);

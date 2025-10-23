@@ -770,27 +770,20 @@ app.post('/api/trigger-groq', async (c) => {
 
     // Try to broadcast through SSE first (works in single-instance environments)
     let sseBroadcastSuccess = false;
+    let sseClientCount = sseClients.size;
+    
+    console.log(`📡 Attempting SSE broadcast to ${sseClientCount} client(s)...`);
+    
     for (const client of sseClients) {
       try {
         client.send('event: transcript\n' + 'data: ' + JSON.stringify({
           content: responseTranscript
         }) + '\n\n');
         sseBroadcastSuccess = true;
+        console.log(`✅ SSE broadcast successful to client`);
       } catch (broadcastError) {
-        console.error('Error broadcasting to SSE client:', broadcastError);
+        console.error('❌ Error broadcasting to SSE client:', broadcastError);
       }
-    }
-
-    // In serverless environments, SSE clients may not be connected to this instance
-    // Return the response transcript so frontend can add it directly
-    if (!sseBroadcastSuccess || sseClients.size === 0) {
-      return c.json({
-        success: true,
-        detected: true,
-        tools_used: (result.tools || []).length,
-        routing_decision: (result.routing || {}).reasoning,
-        response_transcript: responseTranscript // Include the full transcript for frontend to add
-      });
     }
 
     // Also broadcast a system message if there was an error
@@ -814,11 +807,21 @@ app.post('/api/trigger-groq', async (c) => {
       }
     }
 
+    // ALWAYS return response_transcript as a fallback
+    // Even if SSE broadcast succeeded, the frontend will check if it received via SSE
+    // If not, it will use this fallback (handles SSE connection issues)
+    const shouldIncludeTranscript = !sseBroadcastSuccess || sseClients.size === 0;
+    
+    console.log(`📤 Response strategy: ${shouldIncludeTranscript ? 'Including response_transcript (no SSE)' : 'SSE broadcast only'}`);
+
     return c.json({
       success: true,
       detected: result.detected,
       tools_used: result.tools?.length || 0,
-      routing_decision: result.routing?.reasoning
+      routing_decision: result.routing?.reasoning,
+      // CRITICAL: Always include response_transcript if no SSE clients or broadcast failed
+      // This ensures frontend always gets the response even if SSE is broken
+      ...(shouldIncludeTranscript && { response_transcript: responseTranscript })
     });
 
   } catch (error) {

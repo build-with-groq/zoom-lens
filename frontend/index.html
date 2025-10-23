@@ -1825,7 +1825,11 @@
               // Find the processing message and update it
               const processingIndex = this.transcripts.findIndex(t => t.processing && t.user_id === 'zoom-ai');
               if (processingIndex !== -1) {
-                this.transcripts[processingIndex].data = `<div class="flex items-center gap-2"><div class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div><span class="text-gray-500">${content.data}</span></div>`;
+                const processingMessage = this.transcripts[processingIndex];
+                const userPrompt = processingMessage.userPrompt || '';
+                
+                // Preserve the user prompt in the updated message
+                this.transcripts[processingIndex].data = `<div class="flex flex-col gap-1"><div class="text-xs text-gray-400 italic">"${userPrompt}"</div><div class="flex items-center gap-2"><div class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div><span class="text-gray-500">${content.data}</span></div></div>`;
                 this.saveTranscripts();
                 console.log('✅ [SSE] Updated progress message:', content.data);
               }
@@ -1901,6 +1905,7 @@
                t.originalTranscript.original_data === content.original_message)
             );
             if (processingMessageIndex !== -1) {
+              console.log('✅ [SSE] Replacing processing message with AI response via SSE');
               this.transcripts[processingMessageIndex] = {
                 user_id: newTranscript.user_id,
                 user_name: newTranscript.user_name,
@@ -1909,7 +1914,8 @@
                 tools: newTranscript.tools,
                 routing: newTranscript.routing,
                 original_message: newTranscript.original_message,
-                completed: true
+                completed: true,
+                delivered_via_sse: true // Flag to indicate successful SSE delivery
               };
               this.saveTranscripts();
               return;
@@ -2359,13 +2365,19 @@
           this.processingCount++;
 
           // Add a special system message to show the trigger was detected
+          // Extract the user prompt (removing "Hey Zoom" or similar triggers)
+          const userPrompt = (transcript.data || '')
+            .replace(/^(hey\s+zoom|hi\s+zoom|hello\s+zoom|zoom)\s*/gi, '')
+            .trim();
+          
           const zoomMessage = {
             user_id: 'zoom-ai',
             user_name: 'Zoom AI Assistant',
-            data: '<div class="flex items-center gap-2"><div class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div><span class="text-gray-500">Fetching response...</span></div>',
+            data: `<div class="flex flex-col gap-1"><div class="text-xs text-gray-400 italic">"${userPrompt}"</div><div class="flex items-center gap-2"><div class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div><span class="text-gray-500">Fetching response...</span></div></div>`,
             timestamp: Date.now(),
             processing: true,
-            originalTranscript: transcript
+            originalTranscript: transcript,
+            userPrompt: userPrompt // Store user prompt for later updates
           };
 
           this.transcripts.unshift(zoomMessage);
@@ -2679,7 +2691,7 @@
           }
           
           const MAX_RETRIES = 3;
-          const TIMEOUT_MS = 3000; // 3 second timeout
+          const TIMEOUT_MS = 15000; // 15 second timeout (backend processing can take time)
           
           try {
             // Get custom MCP configs from the custom tools component if available
@@ -2744,6 +2756,7 @@
 
               // Check if backend returned the response transcript directly (serverless fallback)
               if (result.response_transcript) {
+                console.log('📨 Backend returned response_transcript directly (serverless mode)');
 
                 // Use the AI response data as-is (backend already processed it)
                 const responseData = result.response_transcript.data || '';
@@ -2792,8 +2805,42 @@
 
                 this.saveTranscripts();
               } else {
-                // The backend will handle adding the response to transcripts via SSE
-                // No need to do anything here - the response will come through the normal transcript stream
+                // Backend completed successfully but didn't return response_transcript
+                // This means SSE should deliver it, BUT we need a timeout fallback
+                console.log('✅ Backend completed, waiting for SSE to deliver response...');
+                
+                // Set a timeout to remove processing indicator if SSE doesn't deliver
+                const SSE_TIMEOUT_MS = 5000; // 5 seconds should be enough for SSE
+                const timeoutId = setTimeout(() => {
+                  // Check if processing message still exists (not replaced by SSE)
+                  const processingMessageIndex = this.transcripts.findIndex(t =>
+                    t.processing &&
+                    !t.completed && // Not already completed
+                    !t.delivered_via_sse && // Not delivered via SSE
+                    t.originalTranscript &&
+                    (t.originalTranscript.data === transcript.original_data ||
+                     t.originalTranscript.data === transcript.data)
+                  );
+                  
+                  if (processingMessageIndex !== -1) {
+                    console.warn('⚠️ SSE timeout - backend completed but no response received via SSE');
+                    console.warn('   Removing processing indicator and showing fallback message');
+                    console.warn('   This likely means SSE connection is broken or in a different instance');
+                    
+                    // Replace with a fallback message
+                    this.transcripts[processingMessageIndex] = {
+                      user_id: 'zoom-ai',
+                      user_name: 'Zoom AI Assistant',
+                      data: '⚠️ Your request was processed, but the response wasn\'t delivered properly. This may be due to a connection issue. Please try refreshing the page or ask again.',
+                      timestamp: Date.now(),
+                      completed: true,
+                      fallback: true
+                    };
+                    this.saveTranscripts();
+                  } else {
+                    console.log('✅ SSE delivery check: Processing message was already replaced (SSE working correctly)');
+                  }
+                }, SSE_TIMEOUT_MS);
               }
 
             } catch (fetchError) {
@@ -2801,19 +2848,25 @@
               
               // Check if this is a timeout error
               if (fetchError.name === 'AbortError') {
-                console.warn(`⏱️ Request timeout (attempt ${retryCount + 1}/${MAX_RETRIES + 1})`);
+                console.warn(`⏱️ Request timeout after ${TIMEOUT_MS}ms - backend is still processing, response will come via SSE`);
+                // DON'T retry - the backend is still processing and will send response via SSE
+                // Just wait for the SSE response to arrive
+                return; // Exit silently, let SSE handle the response
+              }
+              
+              // For network errors (not timeout), retry
+              if (fetchError.message?.includes('Failed to fetch') || fetchError.message?.includes('NetworkError')) {
+                console.warn(`🔌 Network error (attempt ${retryCount + 1}/${MAX_RETRIES + 1}):`, fetchError.message);
                 
-                // Retry if we haven't exceeded max retries
                 if (retryCount < MAX_RETRIES) {
-                  console.log(`🔄 Retrying request silently...`);
+                  console.log(`🔄 Retrying due to network error...`);
+                  // Wait a bit before retrying network errors
+                  await new Promise(resolve => setTimeout(resolve, 1000));
                   return this.sendTriggerRequest(transcript, retryCount + 1);
-                } else {
-                  console.error('❌ Max retries exceeded, giving up');
-                  throw new Error('Request timed out after multiple retries');
                 }
               }
               
-              // Re-throw non-timeout errors
+              // Re-throw other errors
               throw fetchError;
             }
 
