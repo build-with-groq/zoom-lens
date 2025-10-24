@@ -27,7 +27,8 @@ export function clearSalesforceCredentials(userId = 'default') {
 }
 
 // Helper function to process authentication for MCP tools based on registry auth config
-export function processToolAuth(toolConfig, userId = 'default') {
+// requestHeaders (optional): HTTP headers from incoming request (for bearer token passthrough)
+export function processToolAuth(toolConfig, userId = 'default', requestHeaders = null) {
   const authConfig = toolConfig.auth || { type: 'none' };
   const result = {
     shouldInclude: true,
@@ -42,6 +43,23 @@ export function processToolAuth(toolConfig, userId = 'default') {
 
     case 'salesforce_session':
       // Salesforce session-based authentication
+      // Check for bearer token in request headers first (passthrough from client)
+      if (requestHeaders) {
+        const authHeader = requestHeaders.get?.('Authorization') || requestHeaders['Authorization'];
+        const instanceUrl = requestHeaders.get?.('X-Salesforce-Instance-Url') || requestHeaders['X-Salesforce-Instance-Url'];
+        
+        if (authHeader && authHeader.startsWith('Bearer ') && instanceUrl) {
+          // Extract bearer token and use it
+          const accessToken = authHeader.substring(7); // Remove 'Bearer ' prefix
+          result.headers['X-Salesforce-Session'] = `bearer_${Date.now()}`;
+          result.headers['X-Salesforce-Access-Token'] = accessToken;
+          result.headers['X-Salesforce-Instance-URL'] = instanceUrl;
+          console.log(`🔐 Using bearer token from request headers for ${toolConfig.id}`);
+          break;
+        }
+      }
+      
+      // Fallback to stored credentials
       const sfCreds = getSalesforceSessionId(userId);
       if (!sfCreds) {
         result.shouldInclude = false;

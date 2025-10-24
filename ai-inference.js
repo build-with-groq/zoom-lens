@@ -925,7 +925,8 @@ Instructions:
 }
 
 // Generic inference function using intelligent routing with MCP support
-export async function performGroqInference(transcript, userName, context = 'general', chatHistory = [], skipTriggerDetection = false, progressCallback = null) {
+// requestHeaders (optional): HTTP headers from incoming request (for bearer token passthrough)
+export async function performGroqInference(transcript, userName, context = 'general', chatHistory = [], skipTriggerDetection = false, progressCallback = null, requestHeaders = null) {
   console.log(`\n🚀 performGroqInference CALLED`);
   console.log(`   Transcript: "${transcript}"`);
   console.log(`   User: ${userName}`);
@@ -1069,15 +1070,25 @@ export async function performGroqInference(transcript, userName, context = 'gene
       // Use generalized auth processing
       console.log(`   🔐 Processing authentication for ${toolName}...`);
       
-      // CRITICAL FIX: For Salesforce, do NOT include auth headers
+      // CRITICAL FIX: For Salesforce, do NOT include auth headers by default
       // The AI will call sf_set_credentials first to establish the session
-      // Including headers causes duplicate executions (once with headers, once with sf_set_credentials)
+      // However, if bearer token is provided in request headers, we DO pass it through
       if (toolName === 'salesforce') {
-        console.log(`   ⚠️ Salesforce: Skipping auth headers (will use sf_set_credentials instead)`);
-        mcpToolConfig.headers = {};
+        // Check if bearer token is in request headers
+        const authResult = processToolAuth(toolConfig, 'default', requestHeaders);
+        
+        if (authResult.headers && Object.keys(authResult.headers).length > 0) {
+          // Bearer token found in request headers - pass it through
+          mcpToolConfig.headers = authResult.headers;
+          console.log(`   🔐 Salesforce: Using bearer token from request headers`);
+        } else {
+          // No bearer token - use sf_set_credentials flow
+          console.log(`   ⚠️ Salesforce: No bearer token in request, will use sf_set_credentials instead`);
+          mcpToolConfig.headers = {};
+        }
       } else {
         // For other MCP tools, use standard auth processing
-        const authResult = processToolAuth(toolConfig);
+        const authResult = processToolAuth(toolConfig, 'default', requestHeaders);
         
         if (!authResult.shouldInclude) {
           console.warn(`   ❌ Skipping MCP tool ${toolName}: ${authResult.error}`);

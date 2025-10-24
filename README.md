@@ -140,6 +140,91 @@ Zoom Meeting → RTMS Webhook → Signaling WS → Media WS → Transcripts → 
 | `/` | GET | Live transcript viewer UI |
 | `/webhook` | POST | Zoom RTMS webhook handler |
 | `/events` | GET | Server-Sent Events stream |
+| `/sse/message` | POST | MCP tool calls with bearer token auth |
+| `/api/trigger-groq` | POST | Process Groq triggers with optional bearer token |
+| `/api/groq-inference` | POST | Groq inference with optional bearer token |
+
+### Bearer Token Authentication
+
+The Salesforce MCP server now supports bearer token authentication for external API clients. This allows you to pass Salesforce credentials directly in the request headers instead of relying on stored credentials.
+
+#### Method 1: Direct MCP Request (Recommended for API Clients)
+
+**Endpoint**: `POST /sse/message`
+
+Pass credentials in HTTP headers:
+
+```bash
+curl -X POST https://your-server.com/sse/message \
+  -H "Authorization: Bearer YOUR_SALESFORCE_TOKEN" \
+  -H "X-Salesforce-Instance-Url: https://yourinstance.salesforce.com" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "method": "tools/call",
+    "params": {
+      "name": "sf_search_leads",
+      "arguments": {
+        "company": "Acme"
+      }
+    }
+  }'
+```
+
+**Supported Tools**:
+- `sf_search_leads` - Search for leads
+- `sf_create_lead` - Create a new lead
+- `sf_run_soql_query` - Execute SOQL queries
+- All other Salesforce MCP functions
+
+**Response Format**:
+```json
+{
+  "success": true,
+  "method": "tools/call",
+  "tool": "sf_search_leads",
+  "response": "Found 5 leads at Acme Corp...",
+  "tools": [...],
+  "routing": {...}
+}
+```
+
+#### Method 2: Natural Language with Bearer Token
+
+**Endpoint**: `POST /api/trigger-groq` or `POST /api/groq-inference`
+
+Use natural language with bearer token authentication:
+
+```bash
+curl -X POST https://your-server.com/api/trigger-groq \
+  -H "Authorization: Bearer YOUR_SALESFORCE_TOKEN" \
+  -H "X-Salesforce-Instance-Url: https://yourinstance.salesforce.com" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transcript": "Hey Groq, search for leads in Acme Corp",
+    "user_name": "API Client",
+    "context": "api_request"
+  }'
+```
+
+**Benefits**:
+- No need to store credentials on the server
+- Each request is authenticated independently
+- Perfect for serverless deployments (like Deno Deploy)
+- Backwards compatible with existing credential storage
+
+#### Testing Bearer Token Auth
+
+Run the test script to verify bearer token authentication:
+
+```bash
+# Set environment variables
+export TEST_SALESFORCE_TOKEN="your_token_here"
+export TEST_SALESFORCE_INSTANCE_URL="https://yourinstance.salesforce.com"
+export TEST_SERVER_URL="http://localhost:8000"
+
+# Run the test
+deno run --allow-net --allow-env test-bearer-token.js
+```
 
 ## 🚀 Future Integration: Groq Compound
 

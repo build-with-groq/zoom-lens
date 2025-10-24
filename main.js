@@ -628,7 +628,16 @@ app.post('/api/groq-inference', async (c) => {
       .filter(msg => msg.user_id !== 'system' && msg.data)
       .slice(-10); // Keep last 10 messages for context
 
-    const result = await performGroqInference(transcript, user_name, context, filteredChatHistory);
+    // Pass request headers for bearer token passthrough
+    const result = await performGroqInference(
+      transcript, 
+      user_name, 
+      context, 
+      filteredChatHistory,
+      false, // Don't skip trigger detection
+      null, // No progress callback
+      c.req.raw.headers // Pass headers for bearer token auth
+    );
 
     // Include original message for frontend formatting
     result.original_message = transcript;
@@ -744,13 +753,15 @@ app.post('/api/trigger-groq', async (c) => {
 
     // Process the inference (skip trigger detection since frontend already validated)
     // Pass progress callback to broadcast status updates
+    // Pass request headers for bearer token passthrough
     const result = await performGroqInference(
       transcript, 
       user_name || 'Unknown', 
       context || 'meeting_transcript', 
       filteredChatHistory, 
       true,
-      broadcastProgress // Pass the progress callback
+      broadcastProgress, // Pass the progress callback
+      c.req.raw.headers // Pass request headers for bearer token auth
     );
 
     // Create response transcript for SSE broadcast
@@ -843,6 +854,118 @@ app.post('/api/trigger-groq', async (c) => {
 
   } catch (error) {
     console.error('Trigger processing error:', error);
+    return c.json({
+      success: false,
+      error: error.message
+    }, 500);
+  }
+});
+
+// Direct SSE/Message endpoint for API clients (supports bearer token auth)
+// Example: curl -X POST https://your-server.com/sse/message \
+//   -H "Authorization: Bearer YOUR_SALESFORCE_TOKEN" \
+//   -H "X-Salesforce-Instance-Url: https://yourinstance.salesforce.com" \
+//   -H "Content-Type: application/json" \
+//   -d '{"method":"tools/call","params":{"name":"sf_search_leads","arguments":{"company":"Acme"}}}'
+app.post('/sse/message', async (c) => {
+  try {
+    const body = await c.req.json();
+    console.log(`\n${'█'.repeat(80)}`);
+    console.log(`📨 /sse/message ENDPOINT HIT (Bearer Token Auth)`);
+    console.log(`${'█'.repeat(80)}\n`);
+    
+    // Extract authorization header
+    const authHeader = c.req.header('Authorization');
+    const instanceUrl = c.req.header('X-Salesforce-Instance-Url');
+    
+    console.log(`   🔐 Authorization header present: ${!!authHeader}`);
+    console.log(`   🏢 Instance URL: ${instanceUrl || 'not provided'}`);
+    
+    // Validate bearer token auth for Salesforce
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return c.json({
+        success: false,
+        error: 'Missing or invalid Authorization header. Expected: Bearer YOUR_TOKEN'
+      }, 401);
+    }
+    
+    if (!instanceUrl) {
+      return c.json({
+        success: false,
+        error: 'Missing X-Salesforce-Instance-Url header'
+      }, 400);
+    }
+    
+    // Parse MCP request format
+    const { method, params } = body;
+    
+    if (method !== 'tools/call') {
+      return c.json({
+        success: false,
+        error: `Unsupported method: ${method}. Expected: tools/call`
+      }, 400);
+    }
+    
+    if (!params || !params.name) {
+      return c.json({
+        success: false,
+        error: 'Missing params.name in request body'
+      }, 400);
+    }
+    
+    const toolName = params.name;
+    const toolArgs = params.arguments || {};
+    
+    console.log(`   🔧 Tool: ${toolName}`);
+    console.log(`   📋 Arguments:`, toolArgs);
+    
+    // Convert MCP request to a natural language query for the AI
+    let naturalQuery = `Hey Groq, `;
+    
+    if (toolName === 'sf_search_leads') {
+      const { company, name, status, limit } = toolArgs;
+      const parts = [];
+      if (company) parts.push(`in company "${company}"`);
+      if (name) parts.push(`named "${name}"`);
+      if (status) parts.push(`with status "${status}"`);
+      if (limit) parts.push(`limit ${limit}`);
+      naturalQuery += `search for leads ${parts.join(' ')}`;
+    } else if (toolName === 'sf_create_lead') {
+      const { first_name, last_name, company } = toolArgs;
+      naturalQuery += `create a new lead for ${first_name} ${last_name} at ${company}`;
+    } else if (toolName === 'sf_run_soql_query') {
+      naturalQuery += `run SOQL query: ${toolArgs.query}`;
+    } else {
+      // Generic query for other tools
+      naturalQuery += `call ${toolName} with ${JSON.stringify(toolArgs)}`;
+    }
+    
+    console.log(`   🗣️ Natural query: "${naturalQuery}"`);
+    
+    // Process with performGroqInference, passing request headers for bearer token auth
+    const result = await performGroqInference(
+      naturalQuery,
+      'API Client',
+      'api_request',
+      [], // No chat history for direct API calls
+      true, // Skip trigger detection
+      null, // No progress callback
+      c.req.raw.headers // Pass headers for bearer token auth
+    );
+    
+    console.log(`   ✅ Inference completed`);
+    
+    return c.json({
+      success: true,
+      method: method,
+      tool: toolName,
+      response: result.response,
+      tools: result.tools || [],
+      routing: result.routing || {}
+    });
+    
+  } catch (error) {
+    console.error('❌ /sse/message error:', error);
     return c.json({
       success: false,
       error: error.message
