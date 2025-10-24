@@ -124,13 +124,21 @@ ROUTING RULES:
    
 3. **Weather Priority**: If user asks about weather, temperature, forecast → use 'weather' tool
 
-4. **Groq Compound Priority**: If user needs web search, current information, calculations, or code execution → use 'groq_compound' tool (FAST and lightweight)
+4. **Groq Compound Priority (PREFER THIS)**: If user needs web search, current information, calculations, or code execution → use 'groq_compound' tool (FAST and lightweight)
+   - **CRITICAL**: For ANY question about specific events, conferences, products, companies, people, or current topics → use 'groq_compound'
+   - Questions like "what is [specific name]", "when is [event]", "who is [person]" usually need web search
+   - If you're unsure whether the user is asking about something specific or general knowledge → DEFAULT TO 'groq_compound' (it's fast and can handle general questions too)
+   - Examples: "what is the ship ai conf?", "when is the next conference?", "what is Anthropic's goal?", "who won the game?"
 
 5. **HuggingFace Priority**: If user asks about AI models, datasets, machine learning models → use 'huggingface' tool
 
 6. **Parallel Search (Slow)**: Only use 'parallel_search' if groq_compound is insufficient or user specifically needs deep/multi-source search
 
-7. **Direct Answer Fallback**: For general knowledge questions without need for external data → use 'direct_answer'
+7. **Direct Answer (LAST RESORT)**: ONLY for very general knowledge questions that are CLEARLY established facts with no time-sensitivity
+   - Use ONLY when you're 100% certain the answer is static, well-known general knowledge
+   - Examples: "what is 2+2?", "what color is the sky?", "what is photosynthesis?"
+   - DO NOT use for: specific events, conferences, products, companies, people, current topics, or anything time-sensitive
+   - **When in doubt between direct_answer and groq_compound → choose 'groq_compound'**
 
 8. **Function Selection**: When selecting MCP tools, specify which functions to call based on the user's intent. For Salesforce, the MCP server has intelligent function routing so you can suggest common functions like sf_search_leads, sf_run_soql_query, etc.
 
@@ -237,6 +245,36 @@ Response: {
   "reasoning": "User wants to create a new lead in Salesforce",
   "primary_intent": "crm_create",
   "confidence": 0.92
+}
+
+Question: "what is the ship ai conf?"
+Response: {
+  "tools": [
+    {
+      "tool_id": "groq_compound",
+      "functions": [],
+      "params": {
+        "query": "ship ai conference"
+      }
+    }
+  ],
+  "reasoning": "User asking about a specific conference/event - needs web search for current information. This is NOT general knowledge.",
+  "primary_intent": "web_search",
+  "confidence": 0.95
+}
+
+Question: "what is photosynthesis?"
+Response: {
+  "tools": [
+    {
+      "tool_id": "direct_answer",
+      "functions": [],
+      "params": {}
+    }
+  ],
+  "reasoning": "General knowledge question about well-established scientific concept - no web search needed",
+  "primary_intent": "general_knowledge",
+  "confidence": 0.98
 }
 
 Question: "what's the weather in NYC and also search for leads in Acme Corp"
@@ -730,9 +768,15 @@ ${historyText}
       content: query, // Compound model will figure out if it needs web search, code execution, or both
     });
 
+    console.log(`🔧 Calling Groq Compound API with ${messages.length} messages`);
+    
+    // The Groq Compound model handles web search and code execution internally
+    // We need to let it manage its own tools without specifying tool_choice
     const response = await groqClient.chat.completions.create({
       model: "groq/compound",
       messages: messages,
+      temperature: 0.7, // Add temperature for stability
+      max_tokens: 4096, // Ensure enough tokens for response
     });
 
     return {
@@ -741,8 +785,39 @@ ${historyText}
     };
   } catch (error) {
     console.error('Groq compound error:', error);
+    
+    // Check if this is the "Tool choice is none, but model called a tool" error
+    // This can happen intermittently with the compound model
+    if (error.message?.includes('Tool choice is none') || error.message?.includes('model called a tool')) {
+      console.warn('⚠️ Groq Compound tool choice error detected - attempting retry with simplified prompt...');
+      
+      try {
+        // Retry with a more direct, simplified prompt
+        const retryMessages = [{
+          role: "user",
+          content: `Please answer this question: ${query}`
+        }];
+        
+        console.log('🔄 Retry attempt with simplified prompt');
+        const retryResponse = await groqClient.chat.completions.create({
+          model: "groq/compound",
+          messages: retryMessages,
+        });
+        
+        console.log('✅ Retry successful!');
+        return {
+          response: retryResponse.choices[0]?.message?.content || "I couldn't process your request right now.",
+          tool: "groq_compound",
+          retried: true
+        };
+      } catch (retryError) {
+        console.error('❌ Retry failed:', retryError);
+        // Fall through to generic error handling
+      }
+    }
+    
     return {
-      response: `Sorry, I couldn't process "${query}" at the moment.`,
+      response: `Sorry, I couldn't process "${query}" at the moment. ${error.message || ''}`,
       tool: "groq_compound",
       error: true
     };
@@ -759,17 +834,14 @@ export async function answerDirectly(question, context = {}) {
       day: 'numeric' 
     });
 
-    const systemPrompt = `You are Zoom AI, a helpful AI assistant. TODAY'S DATE: ${today}
+    const systemPrompt = `You are a helpful AI assistant. TODAY'S DATE: ${today}
 
-Context: Meeting transcript
-User: ${context.userName || 'Unknown'}
+Context: Conversation with ${context.userName || 'Unknown'}
 
-**CRITICAL CONTEXT INSTRUCTIONS**:
-- This is a CONVERSATIONAL context - maintain the thread of the conversation
-- The user may ask FOLLOW-UP questions that refer to previous messages
-- ALWAYS read the <previous_conversation> section below to understand what the user is referring to
-- If the user says "what about X", "what's their goal", "tell me more", or asks a clarifying question, use the conversation history to provide context
-- Maintain conversation continuity and reference previous topics naturally`;
+Instructions:
+- Maintain continuity with the conversation thread
+- Reference previous messages when relevant
+- Be concise but helpful`;
 
     const messages = [
       {
@@ -801,33 +873,42 @@ User: ${context.userName || 'Unknown'}
       
       console.log(`💬 answerDirectly: Using ${contextStrategy} context strategy (${recentHistory.length}/${contextLimit} messages)`);
       
+      // Add chat history as proper chat messages (not as a summary)
+      // This prevents the AI from thinking it's reading a third-person summary
       if (recentHistory.length > 0) {
-        const historyText = recentHistory.map((msg) => {
-          const role = msg.user_id === 'zoom-ai' ? 'Assistant' : msg.user_name || 'User';
-          return `${role}: ${msg.data}`;
-        }).join('\n');
-        
-        messages.push({
-          role: "user",
-          content: `<previous_conversation>
-Here is the recent conversation history for context:
-
-${historyText}
-</previous_conversation>`
+        console.log(`💬 answerDirectly: Adding ${recentHistory.length} history messages in proper chat format`);
+        recentHistory.forEach((msg, idx) => {
+          const role = msg.user_id === 'zoom-ai' || msg.user_id === 'discovery-ai' ? 'assistant' : 'user';
+          console.log(`   [${idx}] ${role}: ${msg.data?.substring(0, 60)}...`);
+          messages.push({
+            role: role,
+            content: msg.data
+          });
         });
       }
     }
 
     // Add the current question
+    console.log(`💬 answerDirectly: Adding current question: "${question}"`);
     messages.push({
       role: "user",
       content: question
     });
 
+    console.log(`💬 answerDirectly: Sending ${messages.length} total messages to LLM (1 system + ${messages.length - 1} conversation)`);
+    console.log(`💬 answerDirectly: Using model: ${MODEL_DIRECT_ANSWER}`);
+    console.log(`💬 answerDirectly: FULL MESSAGES BEING SENT TO LLM:`);
+    messages.forEach((msg, idx) => {
+      console.log(`   [${idx}] ${msg.role}: ${msg.content}`);
+    });
+    
     const response = await groqClient.chat.completions.create({
       model: MODEL_DIRECT_ANSWER,
       messages: messages
     });
+    
+    console.log(`💬 answerDirectly: Received response: ${response.choices[0]?.message?.content?.substring(0, 100)}...`);
+    console.log(`💬 answerDirectly: FULL RESPONSE FROM LLM: ${response.choices[0]?.message?.content}`);
 
     return {
       response: response.choices[0]?.message?.content || "I couldn't generate a response right now.",

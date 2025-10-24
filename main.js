@@ -771,20 +771,37 @@ app.post('/api/trigger-groq', async (c) => {
     // Try to broadcast through SSE first (works in single-instance environments)
     let sseBroadcastSuccess = false;
     let sseClientCount = sseClients.size;
+    const broadcastTimestamp = new Date().toISOString();
     
-    console.log(`📡 Attempting SSE broadcast to ${sseClientCount} client(s)...`);
+    console.log(`\n${'─'.repeat(80)}`);
+    console.log(`📡 [SSE BROADCAST ${broadcastTimestamp}]`);
+    console.log(`   Client count: ${sseClientCount}`);
+    console.log(`   Response preview: "${responseTranscript.data?.substring(0, 100)}..."`);
+    console.log(`   Original message: "${responseTranscript.original_message?.substring(0, 50)}..."`);
+    console.log(`${'─'.repeat(80)}`);
+    
+    let successfulBroadcasts = 0;
+    let failedBroadcasts = 0;
     
     for (const client of sseClients) {
       try {
-        client.send('event: transcript\n' + 'data: ' + JSON.stringify({
+        const eventData = 'event: transcript\n' + 'data: ' + JSON.stringify({
           content: responseTranscript
-        }) + '\n\n');
+        }) + '\n\n';
+        
+        client.send(eventData);
         sseBroadcastSuccess = true;
-        console.log(`✅ SSE broadcast successful to client`);
+        successfulBroadcasts++;
+        console.log(`✅ [SSE] Broadcast #${successfulBroadcasts} sent successfully`);
       } catch (broadcastError) {
-        console.error('❌ Error broadcasting to SSE client:', broadcastError);
+        failedBroadcasts++;
+        console.error(`❌ [SSE] Broadcast failed (#${failedBroadcasts}):`, broadcastError.message);
+        console.error(`   Error details:`, broadcastError);
       }
     }
+    
+    console.log(`📊 [SSE] Broadcast summary: ${successfulBroadcasts} successful, ${failedBroadcasts} failed`);
+    console.log(`${'─'.repeat(80)}\n`);
 
     // Also broadcast a system message if there was an error
     if (result.error) {
@@ -807,21 +824,21 @@ app.post('/api/trigger-groq', async (c) => {
       }
     }
 
-    // ALWAYS return response_transcript as a fallback
-    // Even if SSE broadcast succeeded, the frontend will check if it received via SSE
-    // If not, it will use this fallback (handles SSE connection issues)
-    const shouldIncludeTranscript = !sseBroadcastSuccess || sseClients.size === 0;
-    
-    console.log(`📤 Response strategy: ${shouldIncludeTranscript ? 'Including response_transcript (no SSE)' : 'SSE broadcast only'}`);
+    // CRITICAL FIX: ALWAYS include response_transcript in HTTP response
+    // Even if SSE broadcast succeeds, the frontend needs this as a guaranteed fallback
+    // because SSE delivery can be unreliable (connection issues, timing problems, etc.)
+    // The frontend will prefer SSE delivery but will use this if SSE doesn't arrive
+    console.log(`📤 Response strategy: Always including response_transcript as guaranteed fallback (SSE clients: ${sseClientCount}, broadcast attempted: ${sseBroadcastSuccess})`);
 
     return c.json({
       success: true,
       detected: result.detected,
       tools_used: result.tools?.length || 0,
       routing_decision: result.routing?.reasoning,
-      // CRITICAL: Always include response_transcript if no SSE clients or broadcast failed
-      // This ensures frontend always gets the response even if SSE is broken
-      ...(shouldIncludeTranscript && { response_transcript: responseTranscript })
+      // ALWAYS include response_transcript - frontend will use it if SSE fails/delays
+      response_transcript: responseTranscript,
+      sse_broadcast_attempted: sseBroadcastSuccess,
+      sse_client_count: sseClientCount
     });
 
   } catch (error) {
