@@ -173,6 +173,47 @@ export const UNIFIED_TOOL_REGISTRY = {
     trigger_prompt: 'Use this as a fallback when no other tools match, or when users ask general knowledge questions that don\'t require real-time data or external tools.',
     handler: null, // Will be set via setBuiltinHandlers
     examples: ['explain machine learning', 'what is quantum computing', 'how does the internet work']
+  },
+
+  update_directives: {
+    id: 'update_directives',
+    type: 'builtin',
+    category: 'context',
+    namespace: 'general',
+    displayName: '📋 Update Directives',
+    description: 'BACKGROUND TOOL: Sets behavioral rules/constraints. NOT for answering user questions.',
+    routing_keywords: [],  // Remove keywords so it's not the primary response
+    trigger_prompt: '⚠️ IMPORTANT: This is a BACKGROUND/OPTIONAL tool. DO NOT use as the primary response!\n\n**When to use this:**\n- User explicitly requests behavioral changes ("always respond in French", "keep responses short")\n- AFTER answering the user\'s question, if they mentioned a persistent preference\n\n**DO NOT use this as the primary response to questions!**\n- If user asks a question, answer it first with groq_compound/salesforce/weather\n- Only update directives if user specified a PERSISTENT BEHAVIORAL RULE\n\n**What belongs here:**\n- Response format rules ("Keep all responses under 3 sentences")\n- Language preferences ("Always respond in French")\n- Tool constraints ("Limit web searches to Reddit only")\n- Persistent focus ("Focus all Salesforce actions on Bob Jones deal")\n\n**DO NOT use for:**\n- Conversation notes (use update_scratchpad)\n- Current one-time requests\n- User\'s questions',
+    handler: null, // Will be set via setBuiltinHandlers
+    params: [
+      { name: 'newContent', type: 'string', description: 'Behavioral rules/constraints (replaces existing). Clear instructions.', required: true }
+    ],
+    examples: [
+      'Always respond in French',
+      'Keep all responses under 3 sentences',
+      'Limit web searches to Reddit only',
+      'Focus all Salesforce actions on Bob Jones deal'
+    ]
+  },
+
+  update_scratchpad: {
+    id: 'update_scratchpad',
+    type: 'builtin',
+    category: 'context',
+    namespace: 'general',
+    displayName: '📝 Update Scratch Pad',
+    description: 'BACKGROUND TOOL: Automatically records conversation notes. NOT for answering user questions.',
+    routing_keywords: [],  // Remove keywords so it's not triggered by user requests
+    trigger_prompt: '⚠️ IMPORTANT: This is a BACKGROUND/OPTIONAL tool for note-taking. DO NOT use this as the primary response to user questions!\n\n**When to use this:**\n- AFTER answering the user\'s question, optionally add contextual notes\n- When important context emerges that should be remembered\n- When user preferences or decisions are discovered\n\n**DO NOT use this as the primary response!**\n- If user asks a question, answer it with groq_compound/salesforce/weather, NOT this tool\n- If user says "write it in the notes", that means answer AND optionally note it, not JUST note it\n\n**If you use this tool, you MUST ALSO use another tool to actually answer the user!**\n\n**What to write (summarize, don\'t quote):**\n✅ CORRECT: "User wants date recommendations for casual restaurants, likes Alpine Inn vibe, looking for cocktail/beer spots"\n❌ WRONG: "alright i really want a date recommendation!!! write it in the notes"\n\n✅ CORRECT: "User researching Palo Alto restaurants for team dinner (8 people), prefers budget-friendly options"\n❌ WRONG: "can you find me restaurants in palo alto for 8 people"\n\nWrite professional contextual notes ABOUT what the user wants/discussed, not their literal words.',
+    handler: null, // Will be set via setBuiltinHandlers
+    params: [
+      { name: 'newContent', type: 'string', description: 'CONTEXTUAL SUMMARY of conversation topics and user needs (NOT literal quotes). Concise bullet points.', required: true }
+    ],
+    examples: [
+      'User researching Palo Alto restaurants for team dinner (8 people), prefers budget-friendly options, likes Italian',
+      'Project deadline: Dec 15. Team: Alice (PM), Bob (Dev). Focusing on mobile-first design',
+      'User wants date trip recommendations, prefers casual Alpine Inn vibe, looking for cocktail/beer spots'
+    ]
   }
 };
 
@@ -181,6 +222,8 @@ export function setBuiltinHandlers(handlers) {
   if (handlers.getWeather) UNIFIED_TOOL_REGISTRY.weather.handler = handlers.getWeather;
   if (handlers.performWebSearch) UNIFIED_TOOL_REGISTRY.groq_compound.handler = handlers.performWebSearch;
   if (handlers.answerDirectly) UNIFIED_TOOL_REGISTRY.direct_answer.handler = handlers.answerDirectly;
+  if (handlers.updateDirectives) UNIFIED_TOOL_REGISTRY.update_directives.handler = handlers.updateDirectives;
+  if (handlers.updateScratchPad) UNIFIED_TOOL_REGISTRY.update_scratchpad.handler = handlers.updateScratchPad;
 }
 
 // Function to add tools programmatically to the unified registry

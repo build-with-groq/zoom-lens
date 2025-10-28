@@ -189,6 +189,18 @@
               
               <div class="flex items-center gap-2">
                 <label class="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    x-model="showRouterRejections"
+                    @change="localStorage.setItem('showRouterRejections', showRouterRejections)"
+                    class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span class="text-xs text-gray-600">Show AI rejection decisions</span>
+                </label>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <label class="flex items-center gap-2 cursor-pointer">
                   <input 
                     type="checkbox" 
                     x-model="requireHeyZoom"
@@ -210,18 +222,6 @@
                   <option value="reluctant">Reluctant.</option>
                   <option value="shy">Shy...</option>
                 </select>
-              </div>
-
-              <div class="flex items-center gap-2">
-                <label class="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    x-model="showRouterRejections"
-                    @change="localStorage.setItem('showRouterRejections', showRouterRejections)"
-                    class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span class="text-xs text-gray-600">Show AI rejection decisions</span>
-                </label>
               </div>
 
               <div class="flex items-center gap-2">
@@ -294,12 +294,19 @@
             >
               Transcripts
             </button>
-            <button 
-              @click="activeTab = 'tools'" 
-              class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors whitespace-nowrap flex-shrink-0" 
+            <button
+              @click="activeTab = 'tools'"
+              class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors whitespace-nowrap flex-shrink-0"
               :class="activeTab === 'tools' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 hover:bg-gray-100 hover:border-gray-400'"
             >
               Tools
+            </button>
+            <button
+              @click="activeTab = 'scratchpad'"
+              class="px-3 py-1 text-xs border border-gray-300 rounded-full font-medium transition-colors whitespace-nowrap flex-shrink-0"
+              :class="activeTab === 'scratchpad' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 hover:bg-gray-100 hover:border-gray-400'"
+            >
+              Scratch Pad
             </button>
           </div>
             <button 
@@ -692,53 +699,6 @@
                     </div>
                     <div class="text-gray-600 text-xs truncate" x-text="instanceUrl"></div>
                   </div>
-                  
-                  <!-- Salesforce Focus/Goal Feature (NEW!) -->
-                  <div x-show="isConfigured" x-data="salesforceFocus()" x-init="init()" class="mt-3 p-3 bg-white rounded-xl border border-gray-300 text-xs">
-                    <div class="flex items-center gap-2 mb-2">
-                      <span class="text-lg">🎯</span>
-                      <span class="font-semibold text-gray-800">Sales Focus</span>
-                      <span class="text-gray-500 text-xs">(Beta)</span>
-                    </div>
-                    
-                    <!-- Show current focus if set -->
-                    <div x-show="hasFocus" class="mb-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
-                      <div class="flex items-center justify-between mb-1">
-                        <span class="text-gray-700 font-medium text-xs">Current Focus:</span>
-                        <button @click="clearFocus" class="text-xs">Clear</button>
-                      </div>
-                      <div class="text-gray-800 text-xs font-medium" x-text="currentFocus?.description"></div>
-                      <div x-show="currentFocus?.name" class="text-gray-600 text-xs mt-1">
-                        <span class="font-medium">Name:</span> <span x-text="currentFocus?.name"></span>
-                      </div>
-                      <div x-show="currentFocus?.recordType" class="text-gray-600 text-xs">
-                        <span class="font-medium">Type:</span> <span x-text="currentFocus?.recordType"></span>
-                      </div>
-                    </div>
-                    
-                    <!-- Set new focus -->
-                    <div x-show="!hasFocus" class="space-y-2">
-                      <input 
-                        type="text"
-                        x-model="focusInput"
-                        @keydown.enter="setFocus"
-                        placeholder='e.g., "Working on Bob Jones deal" or "Focusing on Acme Corp account"'
-                        class="w-full px-3 py-2 text-xs bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 border border-gray-300"
-                      />
-                      <div class="flex gap-2">
-                        <button 
-                          @click="setFocus"
-                          :disabled="!focusInput.trim()"
-                          class="flex-1 bg-transparent border border-gray-400 text-gray-800 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-100 hover:border-gray-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                          Set Focus
-                        </button>
-                      </div>
-                      <div class="text-gray-600 text-xs">
-                        <strong>What's this?</strong> Set a focus to make AI prioritize actions related to a specific lead, contact, or deal.
-                      </div>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -888,6 +848,84 @@
               </template>
             </div>
 
+          </div>
+        </div>
+
+        <!-- Scratch Pad -->
+        <div class="max-w-4xl mx-2 md:mx-auto" x-show="activeTab === 'scratchpad'" x-data="scratchPadApp()">
+          <div class="mb-4">
+            <h3 class="font-semibold text-primary mb-1">Scratch Pad</h3>
+            <p class="text-sm text-text-muted">Set directives and notes that guide AI behavior and provide context for conversations.</p>
+          </div>
+
+          <!-- Directives Section -->
+          <div class="mb-6 p-4 bg-white rounded-xl border border-gray-300">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-lg">📋</span>
+              <h4 class="font-semibold text-gray-800">Directives</h4>
+              <span class="text-gray-500 text-xs">(Behavioral Rules)</span>
+            </div>
+            <p class="text-xs text-gray-600 mb-3">
+              <strong>Set behavioral rules and constraints:</strong> Response format, language preferences, tool constraints, focus areas. The AI can also update these.
+            </p>
+            <textarea
+              x-model="directivesContent"
+              @input="debouncedSaveDirectives"
+              placeholder="e.g., 'Keep all responses under 3 sentences' or 'Always respond in French' or 'Limit web searches to Reddit' or 'Focus on Bob Jones from Salesforce'"
+              class="w-full px-3 py-2 text-sm bg-gray-50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 border border-gray-300 font-mono resize-none"
+              style="min-height: 120px; max-height: 400px; overflow-y: auto;"
+              rows="6"
+            ></textarea>
+            <div class="flex items-center justify-between mt-2">
+              <span class="text-xs text-gray-500" x-show="directivesContent.trim()">
+                <span x-text="directivesContent.length"></span> characters
+              </span>
+              <button
+                @click="clearDirectives"
+                x-show="directivesContent.trim()"
+                class="text-xs text-white hover:text-gray-100 transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+            <div x-show="directivesSaved" class="mt-2 text-xs text-green-600">
+              ✓ Directives saved
+            </div>
+          </div>
+
+          <!-- Scratch Pad Section -->
+          <div class="p-4 bg-white rounded-xl border border-gray-300">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-lg">📝</span>
+              <h4 class="font-semibold text-gray-800">Scratch Pad</h4>
+              <span class="text-gray-500 text-xs">(Meeting Notes)</span>
+            </div>
+            <p class="text-xs text-gray-600 mb-3">
+              <strong>Conversation notes and context:</strong> What's being discussed, user preferences, decisions made, key facts. Like taking notes during a meeting. The AI can also add notes here.
+            </p>
+            <textarea
+              x-model="scratchPadContent"
+              @input="debouncedSaveScratchPad"
+              placeholder="e.g., 'Project deadline: Dec 15&#10;- Key contacts: Alice (PM), Bob (Dev)'"
+              class="w-full px-3 py-2 text-sm bg-gray-50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 border border-gray-300 font-mono resize-none"
+              style="min-height: 200px; max-height: 600px; overflow-y: auto;"
+              rows="10"
+            ></textarea>
+            <div class="flex items-center justify-between mt-2">
+              <span class="text-xs text-gray-500" x-show="scratchPadContent.trim()">
+                <span x-text="scratchPadContent.length"></span> characters
+              </span>
+              <button
+                @click="clearScratchPad"
+                x-show="scratchPadContent.trim()"
+                class="text-xs text-white hover:text-gray-100 transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+            <div x-show="scratchPadSaved" class="mt-2 text-xs text-green-600">
+              ✓ Scratch pad saved
+            </div>
           </div>
         </div>
 
@@ -1377,96 +1415,234 @@
       };
     }
 
-    function salesforceFocus() {
+    function scratchPadApp() {
       return {
-        hasFocus: false,
-        currentFocus: null,
-        focusInput: '',
-        loading: false,
+        directivesContent: '',
+        scratchPadContent: '',
+        directivesSaved: false,
+        scratchPadSaved: false,
+        saveTimeoutDirectives: null,
+        saveTimeoutScratchPad: null,
 
         async init() {
-          await this.loadFocus();
+          // Load from localStorage first (for instant display)
+          this.loadFromLocalStorage();
+
+          // Then fetch from API to get latest (may include AI updates)
+          await this.loadDirectives();
+          await this.loadScratchPad();
+
+          this.setupSSEListeners();
         },
 
-        async loadFocus() {
+        loadFromLocalStorage() {
+          const storedDirectives = localStorage.getItem('directives-content');
+          const storedScratchPad = localStorage.getItem('scratchpad-content');
+
+          if (storedDirectives) {
+            this.directivesContent = storedDirectives;
+            console.log('📋 Loaded directives from localStorage');
+          }
+
+          if (storedScratchPad) {
+            this.scratchPadContent = storedScratchPad;
+            console.log('📝 Loaded scratch pad from localStorage');
+          }
+        },
+
+        setupSSEListeners() {
+          // Listen for AI updates via SSE
+          window.addEventListener('directive-updated-sse', (event) => {
+            const data = event.detail;
+            if (data.updatedBy === 'ai') {
+              this.directivesContent = data.content || '';
+              localStorage.setItem('directives-content', this.directivesContent);
+              this.showDirectivesSaved();
+              console.log('📋 AI updated directives');
+            }
+          });
+
+          window.addEventListener('scratchpad-updated-sse', (event) => {
+            const data = event.detail;
+            if (data.updatedBy === 'ai') {
+              this.scratchPadContent = data.content || '';
+              localStorage.setItem('scratchpad-content', this.scratchPadContent);
+              this.showScratchPadSaved();
+              console.log('📝 AI updated scratch pad');
+            }
+          });
+        },
+
+        async loadDirectives() {
           try {
-            const response = await fetch('/api/salesforce/focus');
+            const response = await fetch('/api/directives');
             const data = await response.json();
-            
-            if (data.success && data.hasFocus) {
-              this.hasFocus = true;
-              this.currentFocus = data.focus;
+
+            if (data.success) {
+              this.directivesContent = data.content || '';
+              localStorage.setItem('directives-content', this.directivesContent);
             }
           } catch (error) {
-            console.error('Error loading Salesforce focus:', error);
+            console.error('Error loading directives:', error);
+            // Keep localStorage value if API fails
           }
         },
 
-        async setFocus() {
-          if (!this.focusInput.trim()) {
-            return;
+        async loadScratchPad() {
+          try {
+            const response = await fetch('/api/scratchpad');
+            const data = await response.json();
+
+            if (data.success) {
+              this.scratchPadContent = data.content || '';
+              localStorage.setItem('scratchpad-content', this.scratchPadContent);
+            }
+          } catch (error) {
+            console.error('Error loading scratch pad:', error);
+            // Keep localStorage value if API fails
+          }
+        },
+
+        debouncedSaveDirectives() {
+          if (this.saveTimeoutDirectives) {
+            clearTimeout(this.saveTimeoutDirectives);
           }
 
-          this.loading = true;
+          this.saveTimeoutDirectives = setTimeout(() => {
+            this.saveDirectives();
+          }, 500);
+        },
+
+        debouncedSaveScratchPad() {
+          if (this.saveTimeoutScratchPad) {
+            clearTimeout(this.saveTimeoutScratchPad);
+          }
+
+          this.saveTimeoutScratchPad = setTimeout(() => {
+            this.saveScratchPad();
+          }, 500);
+        },
+
+        async saveDirectives() {
+          // Save to localStorage immediately for offline persistence
+          localStorage.setItem('directives-content', this.directivesContent);
 
           try {
-            const response = await fetch('/api/salesforce/focus', {
+            const response = await fetch('/api/directives', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                goal: this.focusInput.trim()
+                content: this.directivesContent
               })
             });
 
             const result = await response.json();
 
-            if (result.success && result.goal) {
-              this.hasFocus = true;
-              this.currentFocus = result.goal;
-              this.focusInput = '';
-              
-              console.log('🎯 Salesforce focus set:', this.currentFocus);
-              
-              // Show success notification
-              if (typeof Alpine !== 'undefined') {
-                // Dispatch custom event that transcript app can listen to
-                window.dispatchEvent(new CustomEvent('salesforce-focus-set', {
-                  detail: this.currentFocus
-                }));
-              }
-            } else {
-              console.error('Failed to set focus:', result.error);
+            if (result.success) {
+              this.showDirectivesSaved();
+              console.log('📋 Directives saved to API and localStorage');
             }
           } catch (error) {
-            console.error('Error setting Salesforce focus:', error);
-          } finally {
-            this.loading = false;
+            console.error('Error saving directives to API:', error);
+            // Still saved to localStorage, so show saved indicator
+            this.showDirectivesSaved();
+            console.log('📋 Directives saved to localStorage (API unavailable)');
           }
         },
 
-        async clearFocus() {
+        async saveScratchPad() {
+          // Save to localStorage immediately for offline persistence
+          localStorage.setItem('scratchpad-content', this.scratchPadContent);
+
           try {
-            const response = await fetch('/api/salesforce/focus', {
+            const response = await fetch('/api/scratchpad', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                content: this.scratchPadContent
+              })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+              this.showScratchPadSaved();
+              console.log('📝 Scratch pad saved to API and localStorage');
+            }
+          } catch (error) {
+            console.error('Error saving scratch pad to API:', error);
+            // Still saved to localStorage, so show saved indicator
+            this.showScratchPadSaved();
+            console.log('📝 Scratch pad saved to localStorage (API unavailable)');
+          }
+        },
+
+        async clearDirectives() {
+          if (!confirm('Clear all directives?')) {
+            return;
+          }
+
+          // Clear from localStorage immediately
+          this.directivesContent = '';
+          localStorage.removeItem('directives-content');
+
+          try {
+            const response = await fetch('/api/directives', {
               method: 'DELETE'
             });
 
             const result = await response.json();
 
             if (result.success) {
-              this.hasFocus = false;
-              this.currentFocus = null;
-              this.focusInput = '';
-              
-              console.log('🎯 Salesforce focus cleared');
-              
-              // Dispatch custom event
-              window.dispatchEvent(new CustomEvent('salesforce-focus-cleared'));
+              console.log('📋 Directives cleared from API and localStorage');
             }
           } catch (error) {
-            console.error('Error clearing Salesforce focus:', error);
+            console.error('Error clearing directives from API:', error);
+            console.log('📋 Directives cleared from localStorage (API unavailable)');
           }
+        },
+
+        async clearScratchPad() {
+          if (!confirm('Clear all scratch pad notes?')) {
+            return;
+          }
+
+          // Clear from localStorage immediately
+          this.scratchPadContent = '';
+          localStorage.removeItem('scratchpad-content');
+
+          try {
+            const response = await fetch('/api/scratchpad', {
+              method: 'DELETE'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+              console.log('📝 Scratch pad cleared from API and localStorage');
+            }
+          } catch (error) {
+            console.error('Error clearing scratch pad from API:', error);
+            console.log('📝 Scratch pad cleared from localStorage (API unavailable)');
+          }
+        },
+
+        showDirectivesSaved() {
+          this.directivesSaved = true;
+          setTimeout(() => {
+            this.directivesSaved = false;
+          }, 2000);
+        },
+
+        showScratchPadSaved() {
+          this.scratchPadSaved = true;
+          setTimeout(() => {
+            this.scratchPadSaved = false;
+          }, 2000);
         }
       };
     }
@@ -1955,6 +2131,32 @@
               }
             } catch (e) {
               console.error('❌ [SSE] Error processing progress:', e);
+            }
+          });
+
+          this.eventSource.addEventListener('directive-updated', (event) => {
+            console.log('📋 [SSE] Received directive-updated event');
+            try {
+              const data = JSON.parse(event.data);
+              // Dispatch custom event for scratchPadApp to handle
+              window.dispatchEvent(new CustomEvent('directive-updated-sse', {
+                detail: data
+              }));
+            } catch (e) {
+              console.error('❌ [SSE] Error processing directive-updated:', e);
+            }
+          });
+
+          this.eventSource.addEventListener('scratchpad-updated', (event) => {
+            console.log('📝 [SSE] Received scratchpad-updated event');
+            try {
+              const data = JSON.parse(event.data);
+              // Dispatch custom event for scratchPadApp to handle
+              window.dispatchEvent(new CustomEvent('scratchpad-updated-sse', {
+                detail: data
+              }));
+            } catch (e) {
+              console.error('❌ [SSE] Error processing scratchpad-updated:', e);
             }
           });
         },

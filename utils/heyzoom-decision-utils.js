@@ -140,20 +140,44 @@ export async function evaluateResponseNeed(groqClient, config) {
     };
   }
 
-  // Check cache/queue
+  // Check cache/queue BUT skip cache check for planning/creative requests
   const normalized = transcript.toLowerCase().replace(/hey zoom,?\s*/gi, '').trim();
-  const check = responseManager.checkTopic(normalized);
 
-  if (check.shouldSkip) {
-    return {
-      shouldRespond: false,
-      reasoning: check.cached
-        ? `Already responded to similar query recently (cached)`
-        : `Currently processing similar query (queued)`,
-      confidence: 1.0,
-      cached: check.cached,
-      queued: check.queued
-    };
+  // Planning/creative keywords that indicate a NEW type of request (not a repeat)
+  const planningKeywords = [
+    /\bplan\b/i,
+    /\bcreate\b/i,
+    /\bwrite\b/i,
+    /\bmake\s+(?:me\s+)?(?:a|an)\b/i,
+    /\bdesign\b/i,
+    /\bbuild\b/i,
+    /\bitinerary\b/i,
+    /\bschedule\b/i,
+    /\borganize\b/i,
+    /\bput\s+together\b/i,
+    /\bcome\s+up\s+with\b/i,
+    /\bthrow\s+(?:in|together)\b/i
+  ];
+
+  const isPlanningRequest = planningKeywords.some(pattern => pattern.test(normalized));
+
+  // Only do cache check if NOT a planning request
+  if (!isPlanningRequest) {
+    const check = responseManager.checkTopic(normalized);
+
+    if (check.shouldSkip) {
+      return {
+        shouldRespond: false,
+        reasoning: check.cached
+          ? `Already responded to similar query recently (cached)`
+          : `Currently processing similar query (queued)`,
+        confidence: 1.0,
+        cached: check.cached,
+        queued: check.queued
+      };
+    }
+  } else {
+    console.log('🎨 Planning/creative request detected - bypassing cache check');
   }
 
   // Keyword-based fallback for obvious requests (before AI evaluation)
@@ -168,15 +192,25 @@ export async function evaluateResponseNeed(groqClient, config) {
     /(?:how\s+)?(?:do\s+i|to)\s+(?:find|search|get|look)/i,
     /salesforce/i,
     /crm/i,
+    // Planning/creative requests (always respond to these)
+    /\bplan\b/i,
+    /\bcreate\b/i,
+    /\bwrite\s+(?:me\s+)?(?:a|an)\b/i,
+    /\bmake\s+(?:me\s+)?(?:a|an)\b/i,
+    /\bdesign\b/i,
+    /\bbuild\b/i,
+    /\bitinerary\b/i,
   ];
 
   const hasObviousRequest = obviousRequestPatterns.some(pattern => pattern.test(normalized));
 
-  if (hasObviousRequest) {
+  if (hasObviousRequest || isPlanningRequest) {
     console.log('🎯 Obvious request detected via keywords - bypassing conservative AI evaluation');
     return {
       shouldRespond: true,
-      reasoning: 'Clear request detected via keyword patterns',
+      reasoning: isPlanningRequest
+        ? 'Planning/creative request detected - always respond'
+        : 'Clear request detected via keyword patterns',
       confidence: 0.95,
       cached: false,
       queued: false,

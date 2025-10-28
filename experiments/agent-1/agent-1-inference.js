@@ -16,6 +16,8 @@ import { getAvailableTools } from "../../tool-registry-unified.js";
 import { getSalesforceSessionId } from "../../auth-utils.js";
 import { processToolAuth } from "../../auth-utils.js";
 import { getSalesforceFocus, getFocusGoalPrompt } from "../../salesforce-focus.js";
+import { getDirectives, getDirectivesPrompt } from "../../directives.js";
+import { getScratchPad, getScratchPadPrompt } from "../../scratchpad.js";
 
 // Enhanced AI-powered router that decides which tools and specific MCP functions to use
 export async function intelligentRouter(question, userName, context = {}, chatHistory = []) {
@@ -81,12 +83,18 @@ Examples: ${tool.examples.join('; ')}`;
     });
 
     // Build context string from chat history
-    const contextHint = hasSalesforceContext 
+    const contextHint = hasSalesforceContext
       ? '\n\n⚠️ **CONTEXT ALERT**: Recent conversation includes Salesforce operations (leads/contacts/accounts). If the current question refers to "update", "change", "fix", or mentions a person\'s name without explicit context, it is LIKELY a Salesforce update request. Strongly consider using the \'salesforce\' tool.'
       : '';
-    
+
+    // Get active directives and scratch pad
+    const directives = getDirectives('default');
+    const directivesPrompt = directives ? getDirectivesPrompt(directives) : '';
+    const scratchPad = getScratchPad('default');
+    const scratchPadPrompt = scratchPad ? getScratchPadPrompt(scratchPad) : '';
+
     // Dynamically generate system prompt from registry with detailed MCP function info
-    const systemPrompt = `You are an intelligent routing system for Zoom AI. Your task is to analyze user questions and select the most appropriate tools and specific functions to use.
+    const systemPrompt = `You are an intelligent routing system for Zoom AI. Your task is to analyze user questions and select the most appropriate tools and specific functions to use.${directivesPrompt}${scratchPadPrompt}
 
 TODAY'S DATE: ${today}
 
@@ -1128,19 +1136,25 @@ export async function performGroqInference(transcript, userName, context = 'gene
 
         // Get Salesforce credentials if needed - add to system prompt
         const sfCreds = getSalesforceSessionId('default');
-        
+
         // Get Salesforce focus goal if set
         const sfFocus = getSalesforceFocus('default');
         const focusPrompt = sfFocus ? getFocusGoalPrompt(sfFocus) : '';
-        
+
+        // Get active directives and scratch pad
+        const directivesInference = getDirectives('default');
+        const directivesPromptInference = directivesInference ? getDirectivesPrompt(directivesInference) : '';
+        const scratchPadInference = getScratchPad('default');
+        const scratchPadPromptInference = scratchPadInference ? getScratchPadPrompt(scratchPadInference) : '';
+
         const messages = [];
-        
+
         // Add system message - SIMPLIFIED to reduce token bloat
         messages.push({
           role: "system",
           content: `You are Zoom AI assistant. Today's date is ${today}. Provide accurate, helpful responses using available tools.
 
-For Salesforce: Credentials are in the user message. Call functions directly (sf_search_leads, sf_create_lead, sf_run_soql_query, etc.).${focusPrompt}`
+For Salesforce: Credentials are in the user message. Call functions directly (sf_search_leads, sf_create_lead, sf_run_soql_query, etc.).${focusPrompt}${directivesPromptInference}${scratchPadPromptInference}`
         });
         
         if (sfFocus) {

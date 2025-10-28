@@ -106,8 +106,40 @@ function broadcastProgress(message, type = 'progress') {
   
   // Store for polling clients
   addToRecentTranscripts(progressTranscript);
-  
+
   return progressTranscript;
+}
+
+// Helper function to broadcast custom events to SSE clients (for directives/scratchpad updates)
+function broadcastEvent({ event, data }) {
+  const eventData = {
+    user_id: 'system',
+    user_name: 'System',
+    data: `🤖 AI updated ${event === 'directive-updated' ? 'Directives' : 'Scratch Pad'}`,
+    timestamp: Date.now(),
+    type: event,
+    ...data
+  };
+
+  // Broadcast to SSE clients
+  for (const client of sseClients) {
+    try {
+      client.send(`event: ${event}\n` + 'data: ' + JSON.stringify(data) + '\n\n');
+    } catch (error) {
+      console.error(`Error broadcasting ${event}:`, error);
+    }
+  }
+
+  // Also add to action feed as a transcript
+  const actionTranscript = {
+    user_id: 'system',
+    user_name: 'System',
+    data: `🤖 AI updated ${event === 'directive-updated' ? 'Directives' : 'Scratch Pad'}`,
+    timestamp: Date.now()
+  };
+  addToRecentTranscripts(actionTranscript);
+
+  return eventData;
 }
 import {
   UNIFIED_TOOL_REGISTRY,
@@ -131,6 +163,16 @@ import {
   parseFocusGoal,
   suggestFocusGoals
 } from "./salesforce-focus.js";
+import {
+  setDirectives,
+  getDirectives,
+  clearDirectives
+} from "./directives.js";
+import {
+  setScratchPad,
+  getScratchPad,
+  clearScratchPad
+} from "./scratchpad.js";
 // Import AI inference functions from agent-1 experiment
 import {
   intelligentRouter,
@@ -725,12 +767,190 @@ app.get('/api/salesforce/focus/suggestions', async (c) => {
   }
 });
 
+// Directives Management Endpoints
+app.get('/api/directives', (c) => {
+  const userId = c.req.query('userId') || 'default';
+  const directive = getDirectives(userId);
+
+  return c.json({
+    success: true,
+    hasDirective: !!directive,
+    content: directive?.content || ''
+  });
+});
+
+app.post('/api/directives', async (c) => {
+  try {
+    const body = await c.req.json();
+    const userId = body.userId || 'default';
+    const content = body.content;
+
+    if (content === null || content === undefined) {
+      return c.json({
+        success: false,
+        error: 'Content is required'
+      }, 400);
+    }
+
+    const result = setDirectives(userId, content);
+
+    return c.json(result);
+  } catch (error) {
+    console.error('Error setting directives:', error);
+    return c.json({
+      success: false,
+      error: error.message
+    }, 500);
+  }
+});
+
+app.delete('/api/directives', (c) => {
+  const userId = c.req.query('userId') || 'default';
+  const result = clearDirectives(userId);
+
+  return c.json(result);
+});
+
+// Scratch Pad Management Endpoints
+app.get('/api/scratchpad', (c) => {
+  const userId = c.req.query('userId') || 'default';
+  const scratchPad = getScratchPad(userId);
+
+  return c.json({
+    success: true,
+    hasScratchPad: !!scratchPad,
+    content: scratchPad?.content || ''
+  });
+});
+
+app.post('/api/scratchpad', async (c) => {
+  try {
+    const body = await c.req.json();
+    const userId = body.userId || 'default';
+    const content = body.content;
+
+    if (content === null || content === undefined) {
+      return c.json({
+        success: false,
+        error: 'Content is required'
+      }, 400);
+    }
+
+    const result = setScratchPad(userId, content);
+
+    return c.json(result);
+  } catch (error) {
+    console.error('Error setting scratch pad:', error);
+    return c.json({
+      success: false,
+      error: error.message
+    }, 500);
+  }
+});
+
+app.delete('/api/scratchpad', (c) => {
+  const userId = c.req.query('userId') || 'default';
+  const result = clearScratchPad(userId);
+
+  return c.json(result);
+});
+
 // AI inference and routing functions are now imported from ai-inference.js
+
+// Tool handlers for Directives and Scratch Pad
+/**
+ * Update directives - can be called by AI or user
+ * @param {string} newContent - New directive content (or transcript when called by router)
+ * @param {Object|string} configOrUserId - Config object from router OR userId string
+ * @returns {Object} - Success status and updated directive with displayable message
+ */
+async function updateDirectives(newContent, configOrUserId = 'default') {
+  try {
+    // Handle both signatures: (newContent, userId) OR (transcript, config)
+    const userId = typeof configOrUserId === 'string' ? configOrUserId : 'default';
+
+    const result = setDirectives(userId, newContent);
+
+    // Broadcast update to frontend via SSE
+    if (result.success) {
+      broadcastEvent({
+        event: 'directive-updated',
+        data: {
+          content: newContent,
+          timestamp: Date.now(),
+          updatedBy: 'ai'
+        }
+      });
+    }
+
+    // Return with displayable message for action feed (both 'response' for inference engine and 'message' for logs)
+    const displayMessage = `📋 Updated directives:\n${newContent.substring(0, 150)}${newContent.length > 150 ? '...' : ''}`;
+    return {
+      ...result,
+      response: displayMessage, // For inference engine display
+      message: displayMessage   // For logging/debugging
+    };
+  } catch (error) {
+    console.error('Error updating directives:', error);
+    return {
+      success: false,
+      error: error.message,
+      response: '❌ Failed to update directives',
+      message: 'Failed to update directives'
+    };
+  }
+}
+
+/**
+ * Update scratch pad - can be called by AI or user
+ * @param {string} newContent - New scratch pad content (or transcript when called by router)
+ * @param {Object|string} configOrUserId - Config object from router OR userId string
+ * @returns {Object} - Success status and updated scratch pad with displayable message
+ */
+async function updateScratchPad(newContent, configOrUserId = 'default') {
+  try {
+    // Handle both signatures: (newContent, userId) OR (transcript, config)
+    const userId = typeof configOrUserId === 'string' ? configOrUserId : 'default';
+
+    const result = setScratchPad(userId, newContent);
+
+    // Broadcast update to frontend via SSE
+    if (result.success) {
+      broadcastEvent({
+        event: 'scratchpad-updated',
+        data: {
+          content: newContent,
+          timestamp: Date.now(),
+          updatedBy: 'ai'
+        }
+      });
+    }
+
+    // Return with displayable message for action feed (both 'response' for inference engine and 'message' for logs)
+    const displayMessage = `📝 Updated scratch pad:\n${newContent.substring(0, 150)}${newContent.length > 150 ? '...' : ''}`;
+    return {
+      ...result,
+      response: displayMessage, // For inference engine display
+      message: displayMessage   // For logging/debugging
+    };
+  } catch (error) {
+    console.error('Error updating scratch pad:', error);
+    return {
+      success: false,
+      error: error.message,
+      response: '❌ Failed to update scratch pad',
+      message: 'Failed to update scratch pad'
+    };
+  }
+}
+
 // Set built-in handlers in the tool registry
 setBuiltinHandlers({
   getWeather,
   performWebSearch,
-  answerDirectly
+  answerDirectly,
+  updateDirectives,
+  updateScratchPad
 });
 
 // Groq inference endpoint
