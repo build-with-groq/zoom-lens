@@ -382,9 +382,10 @@
                     
                   <!-- Time Column -->
                   <div class="text-xs text-gray-500 text-right pt-1">
-                    <span x-text="new Date(t.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})"></span>
+                    <div x-text="new Date(t.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})"></div>
+                    <div x-show="t.apiDuration" class="text-gray-400" x-text="t.apiDuration ? ('(' + (t.apiDuration / 1000).toFixed(2) + 's)') : ''"></div>
                   </div>
-                  
+
                   <!-- Content Column -->
                   <div class="min-w-0">
                     <!-- User name and badges -->
@@ -481,9 +482,10 @@
                     
                   <!-- Time Column -->
                   <div class="text-xs text-gray-500 text-right pt-1">
-                    <span x-text="new Date(t.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})"></span>
+                    <div x-text="new Date(t.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})"></div>
+                    <div x-show="t.apiDuration" class="text-gray-400" x-text="t.apiDuration ? ('(' + (t.apiDuration / 1000).toFixed(2) + 's)') : ''"></div>
                   </div>
-                  
+
                   <!-- Content Column -->
                   <div class="min-w-0">
                     <!-- User name and badges -->
@@ -980,9 +982,10 @@
                   
                   <!-- Time Column -->
                   <div class="text-xs text-gray-500 text-right pt-1">
-                    <span x-text="new Date(t.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})"></span>
+                    <div x-text="new Date(t.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})"></div>
+                    <div x-show="t.apiDuration" class="text-gray-400" x-text="t.apiDuration ? ('(' + (t.apiDuration / 1000).toFixed(2) + 's)') : ''"></div>
                   </div>
-                  
+
                   <!-- Content Column -->
                   <div class="min-w-0">
                     <!-- User name and badges -->
@@ -1840,13 +1843,15 @@
               user_name: 'Discovery',
               data: 'Analyzing conversation for insights...',
               timestamp: Date.now(),
-              processing: true
+              processing: true,
+              apiStartTime: Date.now() // Track API call start time for duration measurement
             };
-            
+
             this.transcripts.unshift(processingMessage);
             this.saveTranscripts();
-            
+
             // Call the discovery API endpoint
+            const apiStartTime = Date.now();
             const response = await fetch('/api/discovery-analysis', {
               method: 'POST',
               headers: {
@@ -1864,16 +1869,20 @@
             }
             
             const result = await response.json();
-            
+
+            // Calculate API duration
+            const apiDuration = Date.now() - apiStartTime;
+            console.log(`⏱️ Discovery API roundtrip duration: ${apiDuration.toFixed(3)}ms`);
+
             // Remove processing indicator
-            const processingIndex = this.transcripts.findIndex(t => 
+            const processingIndex = this.transcripts.findIndex(t =>
               t.user_id === 'discovery-ai' && t.processing
             );
-            
+
             if (processingIndex !== -1) {
               this.transcripts.splice(processingIndex, 1);
             }
-            
+
             // Add discovery insights if any were generated
             if (result.insights && result.insights.length > 0) {
               result.insights.forEach(insight => {
@@ -1885,12 +1894,13 @@
                   tools: insight.tools || [],
                   routing: insight.routing,
                   citations: insight.citations || [],
-                  skipped: insight.skipped || false  // Preserve skipped flag
+                  skipped: insight.skipped || false,  // Preserve skipped flag
+                  apiDuration: apiDuration // Store API roundtrip duration in milliseconds
                 };
 
                 this.transcripts.unshift(discoveryTranscript);
               });
-              
+
               this.saveTranscripts();
               console.log(`✅ Added ${result.insights.length} discovery insight(s)`);
             } else {
@@ -2260,10 +2270,19 @@
             );
             if (processingMessageIndex !== -1) {
               const deliveryTimestamp = new Date().toISOString();
+              const processingMessage = this.transcripts[processingMessageIndex];
+
+              // Calculate API duration in milliseconds
+              let apiDuration = null;
+              if (processingMessage.apiStartTime) {
+                apiDuration = Date.now() - processingMessage.apiStartTime;
+                console.log(`⏱️ API roundtrip duration: ${apiDuration.toFixed(3)}ms`);
+              }
+
               console.log(`✅ [SSE ${deliveryTimestamp}] Replacing processing message with AI response via SSE`);
               console.log(`   Original message: "${content.original_message?.substring(0, 50)}..."`);
               console.log(`   Response preview: "${content.data?.substring(0, 100)}..."`);
-              
+
               // Clean the data - remove any spinner HTML that might have been added during progress updates
               let cleanData = newTranscript.data;
               // If data contains HTML spinner elements, extract just the text content
@@ -2272,7 +2291,7 @@
                 // This is likely leftover HTML from progress updates, use the raw content instead
                 cleanData = content.data || newTranscript.data;
               }
-              
+
               this.transcripts[processingMessageIndex] = {
                 user_id: newTranscript.user_id,
                 user_name: newTranscript.user_name,
@@ -2284,7 +2303,8 @@
                 processing: false, // Mark processing as complete
                 completed: true,
                 delivered_via_sse: true, // Flag to indicate successful SSE delivery
-                sse_delivery_time: deliveryTimestamp // Track when SSE delivered
+                sse_delivery_time: deliveryTimestamp, // Track when SSE delivered
+                apiDuration: apiDuration // Store API roundtrip duration in milliseconds
               };
               this.saveTranscripts();
               console.log(`   💾 Transcript saved with SSE delivery flag`);
@@ -2786,7 +2806,8 @@
             timestamp: Date.now(),
             processing: true,
             originalTranscript: transcript,
-            userPrompt: userPrompt // Store user prompt for later updates
+            userPrompt: userPrompt, // Store user prompt for later updates
+            apiStartTime: Date.now() // Track API call start time for duration measurement
           };
 
           this.transcripts.unshift(zoomMessage);
