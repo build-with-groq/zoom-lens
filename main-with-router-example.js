@@ -93,7 +93,7 @@ app.post('/api/trigger-groq', async (c) => {
     const body = await c.req.json();
     const { transcript, user_name, context, chat_history } = body;
 
-    // This uses whichever agent is active (agent-1 or agent-2)
+    // This uses whichever agent is active (currently agent-1)
     const result = await performGroqInference(
       transcript,
       user_name,
@@ -139,7 +139,8 @@ export default app;
  * 4. Existing routes: NO CHANGES NEEDED!
  *
  * Now you can switch agents by:
- * - export ACTIVE_AGENT=agent-2
- * - Or change line 15 in agent-router.js
+ * - export ACTIVE_AGENT=agent-1 (or any registered agent)
+ * - Or change ACTIVE_AGENT in agent-router.js
+ * - Add new experimental agents to AGENT_REGISTRY
  * - Restart the app
  */

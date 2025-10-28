@@ -17,7 +17,7 @@ import { getSalesforceSessionId } from "../../auth-utils.js";
 import { processToolAuth } from "../../auth-utils.js";
 import { getSalesforceFocus, getFocusGoalPrompt } from "../../salesforce-focus.js";
 import { getDirectives, getDirectivesPrompt } from "../../directives.js";
-import { getScratchPad, getScratchPadPrompt } from "../../scratchpad.js";
+import { getScratchPad, getScratchPadPrompt, setScratchPad } from "../../scratchpad.js";
 
 // Enhanced AI-powered router that decides which tools and specific MCP functions to use
 export async function intelligentRouter(question, userName, context = {}, chatHistory = []) {
@@ -35,6 +35,11 @@ export async function intelligentRouter(question, userName, context = {}, chatHi
     // Note: chatHistory comes from frontend with newest first, so take first 30 and reverse
     const recentHistory = chatHistory
       .slice(0, 30)
+      .filter(msg =>
+        msg.user_id !== 'system' &&
+        msg.user_id !== 'zoom-ai-router' &&  // Exclude router decision messages
+        msg.data
+      )
       .reverse() // Reverse to get chronological order (oldest to newest)
       .map(msg => ({
         role: msg.user_id === 'zoom-ai' || msg.user_id === 'discovery-ai' ? 'assistant' : 'user',
@@ -52,8 +57,8 @@ export async function intelligentRouter(question, userName, context = {}, chatHi
     
     console.log(`🔍 ROUTING: Salesforce context in recent history: ${hasSalesforceContext ? 'YES' : 'NO'}`);
 
-    // Build detailed tool information including MCP functions
-    const toolsDescription = Object.values(availableTools).map(tool => {
+    // Build detailed tool information including MCP functions (filter out hidden tools)
+    const toolsDescription = Object.values(availableTools).filter(tool => !tool.hidden).map(tool => {
       let toolInfo = `## ${tool.displayName} (${tool.id})
 Type: ${tool.type}
 Description: ${tool.description}
@@ -114,7 +119,15 @@ CURRENT QUESTION TO ANALYZE: "${question}"
 USER: ${userName}
 
 RECENT CONVERSATION CONTEXT (for understanding references and follow-up questions):
-${recentHistory.slice(-8).map(msg => `${msg.role === 'assistant' ? 'Assistant' : 'User'}: ${msg.content?.substring(0, 200)}...`).join('\n')}
+${recentHistory.slice(-20).map((msg, idx, arr) => {
+  const role = msg.role === 'assistant' ? 'Assistant' : 'User';
+  // Last 5 messages: no truncation
+  if (idx >= arr.length - 5) {
+    return `${role}: ${msg.content}`;
+  }
+  // Older messages: truncate to 600 chars
+  return `${role}: ${msg.content?.substring(0, 600)}${msg.content?.length > 600 ? '...' : ''}`;
+}).join('\n')}
 
 AVAILABLE TOOLS AND FUNCTIONS:
 ${toolsDescription}
@@ -122,13 +135,16 @@ ${toolsDescription}
 ROUTING RULES:
 1. **MULTIPLE REQUESTS HANDLING**: Users may include multiple commands in a single message (e.g., "search for leads in Acme AND get the weather in SF"). You MUST identify ALL separate requests and return multiple tool entries in the tools array. Each distinct request should have its own tool entry.
 
-2. **Salesforce Priority (COMPREHENSIVE)**: If user mentions ANYTHING related to sales, CRM, or business operations → ALWAYS use 'salesforce' tool
-   - Sales terms: leads, contacts, accounts, opportunities, deals, prospects, customers, pipeline
-   - Actions: create, search, find, get, show, **UPDATE**, **CHANGE**, **MODIFY**, **EDIT**, **FIX**, **CORRECT**, **RENAME**, convert, add note, create task
-   - ⚠️ **UPDATE OPERATIONS**: If user says "change", "update", "modify", "edit", "set", "fix", "correct", "rename", "spelled wrong" on ANY field (name, company, email, phone, etc.) on a lead/contact/account → ALWAYS use 'salesforce' tool
-   - ⚠️ **NAME UPDATES**: If user says "update the name", "change the name", "spelled it wrong", "fix the name", "correct the spelling" → ALWAYS use 'salesforce' tool to update the record
-   - SOQL: any query with SELECT, FROM, WHERE, LIMIT keywords
+2. **Salesforce Priority (SALES/CRM ONLY)**: ONLY use Salesforce for BUSINESS/SALES/CRM operations - NOT for personal notes, restaurants, trips, or general tasks
+   - **Sales terms**: leads, contacts, accounts, opportunities, deals, prospects, customers, pipeline, business contacts
+   - **CRM Actions**: create lead/contact/account, search CRM, find business contacts, update sales records
+   - **IMPORTANT**: "add note" = Salesforce note ONLY if it's about a SALES LEAD/CONTACT/DEAL (e.g., "add note to Bob Jones about the sales call")
+   - **NOT Salesforce**: Personal trips, restaurant recommendations, general notes, to-dos, shopping lists
+   - ⚠️ **UPDATE OPERATIONS**: If user says "change", "update", "modify", "edit", "set", "fix", "correct", "rename" on a BUSINESS CONTACT or SALES RECORD → use 'salesforce' tool
+   - ⚠️ **NAME UPDATES**: If user says "update the name" referring to a SALES LEAD/CONTACT → use 'salesforce' tool to update the record
+   - SOQL: any query with SELECT, FROM, WHERE, LIMIT keywords (for CRM data)
    - The Salesforce MCP has 30+ functions and handles ALL CRM operations automatically
+   - **When in doubt**: Is this about SALES/BUSINESS? → Salesforce. Personal/general? → NOT Salesforce
    
 3. **Weather Priority**: If user asks about weather, temperature, forecast → use 'weather' tool
 
@@ -170,6 +186,39 @@ ROUTING RULES:
   2. Then the MCP server will automatically use the found contact ID to call 'sf_create_note'
 - When in doubt about sales/CRM requests: ALWAYS choose 'salesforce' tool
 
+**SCRIBE MODE - PASSIVE NOTE-TAKING**:
+You are ALSO a meeting scribe. While routing tools, ALWAYS evaluate if this conversation contains useful context to remember:
+- User preferences mentioned ("I prefer Italian food", "I like mountain views")
+- Decisions made ("Decided on Palo Alto area", "Going with casual restaurants")
+- Project context ("Planning team dinner for 8 people", "Budget is $500")
+- What user is working on ("Researching restaurants", "Looking for date spots")
+- Actions you're taking ("Searched for restaurants, found 5 options", "Looked up weather")
+
+**WHEN TO TAKE NOTES**:
+- User expresses preferences or needs (even casual mentions!)
+- Important context emerges about their goals
+- Decisions are made
+- After taking actions (summarize what was done)
+- When conversation reveals useful background info
+
+**WHAT TO WRITE** (in "scratchpad_notes" field):
+- Concise bullet-point summary of key context
+- Write ABOUT what's happening, not literal quotes
+- Professional notes like a meeting scribe would take
+- Example: "User researching casual restaurants near Palo Alto, prefers Alpine Inn vibe, has car for travel"
+
+**DO NOT write notes for**:
+- Trivial/obvious things with no future value
+- Exact repeats of what's already in scratch pad
+
+**EXPLICIT SCRATCHPAD REQUESTS**:
+If the user EXPLICITLY asks to add/save something to the scratchpad (e.g., "add that to scratchpad", "save to notes", "summarize to scratchpad"):
+1. Look at the PREVIOUS assistant message in chat history
+2. Extract the useful content from that message (restaurant lists, recommendations, etc.)
+3. Format it nicely (bullet points, structured notes)
+4. Include it in the "scratchpad_update" field
+5. DO NOT call update_scratchpad as a tool - just use the scratchpad_update field!
+
 REQUIRED JSON RESPONSE FORMAT:
 {
   "tools": [
@@ -183,7 +232,9 @@ REQUIRED JSON RESPONSE FORMAT:
   ],
   "reasoning": "brief explanation of why these tools were selected",
   "primary_intent": "main user intent category",
-  "confidence": 0.0
+  "confidence": 0.0,
+  "scratchpad_notes": "optional - concise bullet points about context to remember (or null if nothing noteworthy)",
+  "scratchpad_update": "optional - when user explicitly requests to save content, include the FORMATTED content from previous response here (or null if not requested)"
 }
 
 RESPONSE EXAMPLES:
@@ -512,12 +563,94 @@ Now analyze the user's question and return ONLY valid JSON:`;
         return tool;
       });
 
+      // SCRIBE MODE: Handle passive note-taking (non-blocking)
+      const hasNotes = routingDecision.scratchpad_notes &&
+                       typeof routingDecision.scratchpad_notes === 'string' &&
+                       routingDecision.scratchpad_notes.trim() &&
+                       routingDecision.scratchpad_notes !== 'null';
+
+      console.log(`\n${'─'.repeat(80)}`);
+      console.log(`📝 SCRIBE DECISION`);
+      if (hasNotes) {
+        const notePreview = routingDecision.scratchpad_notes.substring(0, 120);
+        console.log(`   ✅ Taking Notes: YES`);
+        console.log(`   📋 Content: "${notePreview}${routingDecision.scratchpad_notes.length > 120 ? '...' : ''}"`);
+        console.log(`   💡 Why: Router identified useful context to remember`);
+
+        // Run in background, don't wait
+        (async () => {
+          try {
+            const existingPad = getScratchPad('default');
+            const existingContent = existingPad?.content || '';
+
+            // Append new notes with timestamp
+            const timestamp = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const newNotes = routingDecision.scratchpad_notes.trim();
+            const updatedContent = existingContent
+              ? `${existingContent}\n\n[${timestamp}] ${newNotes}`
+              : `[${timestamp}] ${newNotes}`;
+
+            setScratchPad('default', updatedContent);
+            console.log(`   ✓ Saved to scratch pad with timestamp`);
+          } catch (err) {
+            console.error(`   ❌ Failed to save notes:`, err);
+          }
+        })();
+      } else {
+        const rawValue = routingDecision.scratchpad_notes;
+        console.log(`   ⏭️  Taking Notes: NO`);
+        console.log(`   💭 Router's decision: ${rawValue === null || rawValue === 'null' ? 'No context worth capturing' : 'Empty/trivial content'}`);
+        console.log(`   📊 To improve: Review if this conversation had useful context that should have been noted`);
+      }
+      console.log(`${'─'.repeat(80)}\n`);
+
+      // EXPLICIT SCRATCHPAD UPDATE: Handle user requests to save content
+      const hasExplicitUpdate = routingDecision.scratchpad_update &&
+                                typeof routingDecision.scratchpad_update === 'string' &&
+                                routingDecision.scratchpad_update.trim() &&
+                                routingDecision.scratchpad_update !== 'null';
+
+      console.log(`\n${'─'.repeat(80)}`);
+      console.log(`📝 EXPLICIT SCRATCHPAD UPDATE`);
+      if (hasExplicitUpdate) {
+        const updatePreview = routingDecision.scratchpad_update.substring(0, 120);
+        console.log(`   ✅ User requested content save: YES`);
+        console.log(`   📋 Content: "${updatePreview}${routingDecision.scratchpad_update.length > 120 ? '...' : ''}"`);
+        console.log(`   💡 Source: Router extracted from previous AI response`);
+
+        // Run in background, don't wait
+        (async () => {
+          try {
+            const existingPad = getScratchPad('default');
+            const existingContent = existingPad?.content || '';
+
+            // Append new content with timestamp
+            const timestamp = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const newContent = routingDecision.scratchpad_update.trim();
+            const updatedContent = existingContent
+              ? `${existingContent}\n\n[${timestamp}] ${newContent}`
+              : `[${timestamp}] ${newContent}`;
+
+            setScratchPad('default', updatedContent);
+
+            console.log(`   ✓ Saved to scratch pad (will be broadcasted via SSE by main.js)`);
+          } catch (err) {
+            console.error(`   ❌ Failed to save explicit update:`, err);
+          }
+        })();
+      } else {
+        console.log(`   ⏭️  User requested content save: NO`);
+        console.log(`   💭 No explicit request to add content to scratchpad`);
+      }
+      console.log(`${'─'.repeat(80)}\n`);
+
       return {
         tools: normalizedTools.map(t => t.tool_id), // Keep backward compatibility
         toolDetails: normalizedTools, // New detailed format
         reasoning: routingDecision.reasoning || 'AI-powered routing decision',
         primaryIntent: routingDecision.primary_intent || 'general',
-        confidence: routingDecision.confidence || 0.8
+        confidence: routingDecision.confidence || 0.8,
+        scratchpadNotes: routingDecision.scratchpad_notes || null // Pass notes info back
       };
     } catch (parseError) {
       console.error('❌ ROUTING: Failed to parse routing decision as JSON:', parseError);
@@ -742,9 +875,10 @@ export async function performWebSearch(query, context = {}) {
       
       const recentHistory = chatHistory
         .slice(0, contextLimit)
-        .filter(msg => 
-          msg.user_id !== 'system' && 
-          msg.user_id !== 'discovery-ai' && 
+        .filter(msg =>
+          msg.user_id !== 'system' &&
+          msg.user_id !== 'discovery-ai' &&
+          msg.user_id !== 'zoom-ai-router' &&  // Exclude router decision messages
           msg.data &&
           msg.data !== query &&
           msg.original_data !== query
@@ -842,14 +976,9 @@ export async function answerDirectly(question, context = {}) {
       day: 'numeric' 
     });
 
-    const systemPrompt = `You are a helpful AI assistant. TODAY'S DATE: ${today}
+    const systemPrompt = `You are a friendly, conversational AI assistant chatting with ${context.userName || 'someone'}. TODAY'S DATE: ${today}
 
-Context: Conversation with ${context.userName || 'Unknown'}
-
-Instructions:
-- Maintain continuity with the conversation thread
-- Reference previous messages when relevant
-- Be concise but helpful`;
+Have a natural conversation - respond directly to what they're saying, reference earlier parts of the chat when relevant, and keep it casual and genuine. Don't over-explain or show your work unless asked.`;
 
     const messages = [
       {
@@ -870,9 +999,10 @@ Instructions:
       
       const recentHistory = chatHistory
         .slice(0, contextLimit)
-        .filter(msg => 
-          msg.user_id !== 'system' && 
-          msg.user_id !== 'discovery-ai' && 
+        .filter(msg =>
+          msg.user_id !== 'system' &&
+          msg.user_id !== 'discovery-ai' &&
+          msg.user_id !== 'zoom-ai-router' &&  // Exclude router decision messages
           msg.data &&
           msg.data !== question &&
           msg.original_data !== question
@@ -1045,10 +1175,29 @@ export async function performGroqInference(transcript, userName, context = 'gene
     const toolsUsed = [];
     const mcpTools = [];
 
-    // Prepare MCP tools for the Responses API: include ONLY MCP tools selected by the router
-    console.log(`\n${'='.repeat(80)}`);
-    console.log(`🔧 MCP TOOL PREPARATION`);
-    console.log(`   Processing ${routingDecision.tools.length} tools from router...`);
+    // Check if scratchpad_update is present, skip tool execution and return simple confirmation
+    const hasExplicitUpdate = routingDecision.scratchpad_update &&
+                              typeof routingDecision.scratchpad_update === 'string' &&
+                              routingDecision.scratchpad_update.trim() &&
+                              routingDecision.scratchpad_update !== 'null';
+
+    if (hasExplicitUpdate) {
+      console.log(`\n${'='.repeat(80)}`);
+      console.log(`✅ SCRATCHPAD UPDATE DETECTED - Skipping tool execution`);
+      console.log(`   Generating simple confirmation message instead`);
+      console.log(`${'='.repeat(80)}\n`);
+
+      // Generate simple confirmation message
+      const updatePreview = routingDecision.scratchpad_update.substring(0, 80).replace(/\*\*/g, '');
+      finalResponse = `Added to Scratchpad: ${updatePreview}${routingDecision.scratchpad_update.length > 80 ? '...' : ''}`;
+
+      // Skip to the end and return the response
+    } else {
+      // Normal tool execution flow
+      // Prepare MCP tools for the Responses API: include ONLY MCP tools selected by the router
+      console.log(`\n${'='.repeat(80)}`);
+      console.log(`🔧 MCP TOOL PREPARATION`);
+      console.log(`   Processing ${routingDecision.tools.length} tools from router...`);
     
     for (const toolName of routingDecision.tools) {
       console.log(`\n   📦 Processing tool: ${toolName}`);
@@ -1589,11 +1738,21 @@ For Salesforce: Credentials are in the user message. Call functions directly (sf
               const location = locationMatch ? locationMatch[1].trim() : 'San Francisco';
               result = await toolConfig.handler(location);
               result.location = location;
-            } else {
+            }
+            // Special handling for scratchpad/directives - use router's extracted content
+            else if (toolName === 'update_scratchpad' || toolName === 'update_directives') {
+              const newContent = tool.params?.newContent || transcript;
+              console.log(`📝 Calling ${toolName} with content from router:`, {
+                content_length: newContent.length,
+                content_preview: newContent.substring(0, 100)
+              });
+              result = await toolConfig.handler(newContent, 'default');
+            }
+            else {
               // Pass chatHistory AND contextStrategy to all builtin tools
-              result = await toolConfig.handler(transcript, { 
-                userName, 
-                context, 
+              result = await toolConfig.handler(transcript, {
+                userName,
+                context,
                 chatHistory,
                 contextStrategy: routingDecision.contextStrategy,
                 isFollowUpQuestion: routingDecision.isFollowUpQuestion
@@ -1691,11 +1850,16 @@ Please provide a comprehensive, well-formatted response that synthesizes all thi
         }
       }
     }
+    } // End of else block (normal tool execution flow)
 
     // Extract all citations from tools
     const allCitations = toolsUsed
       .filter(t => t.citations && t.citations.length > 0)
       .flatMap(t => t.citations);
+
+    // Get current scratchpad and directives to return to frontend
+    const currentDirectives = getDirectives('default');
+    const currentScratchPad = getScratchPad('default');
 
     return {
       detected: true,
@@ -1704,7 +1868,10 @@ Please provide a comprehensive, well-formatted response that synthesizes all thi
       routing: routingDecision,
       context: context,
       chatHistoryLength: chatHistory.length,
-      citations: allCitations.length > 0 ? allCitations : undefined
+      citations: allCitations.length > 0 ? allCitations : undefined,
+      // Include updated scratchpad/directives so frontend can update UI
+      scratchpad: currentScratchPad ? { content: currentScratchPad.content, timestamp: currentScratchPad.timestamp } : null,
+      directives: currentDirectives ? { content: currentDirectives.content, timestamp: currentDirectives.timestamp } : null
     };
 
   } catch (error) {

@@ -357,9 +357,9 @@
                   <div x-show="!t.processing && (!t.skipped || showRouterRejections)"
                        class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 rounded-xl shadow-sm mb-2"
                        :class="t.skipped ? '' : 'bg-white'">
-                    <!-- Replay button (appears on hover) - Hidden for AI responses -->
-                    <button 
-                      x-show="t.original_message"
+                    <!-- Replay button (appears on hover) - Hidden for AI responses and router decisions -->
+                    <button
+                      x-show="t.original_message && t.user_id !== 'zoom-ai-router'"
                       @click="replayMessage(t)"
                       class="absolute top-3 right-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-blue-50 rounded"
                       title="Replay this message"
@@ -456,9 +456,9 @@
                 <div>
                   <!-- Processing messages and regular AI responses: same full container format -->
                   <div x-show="t.user_id === 'zoom-ai'" class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
-                    <!-- Replay button (appears on hover) - Hidden for AI responses -->
-                    <button 
-                      x-show="t.original_message"
+                    <!-- Replay button (appears on hover) - Hidden for AI responses and router decisions -->
+                    <button
+                      x-show="t.original_message && t.user_id !== 'zoom-ai-router'"
                       @click="replayMessage(t)"
                       class="absolute top-3 right-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-blue-50 rounded"
                       title="Replay this message"
@@ -955,9 +955,9 @@
                 <div x-show="t.user_id !== 'zoom-ai-router' || showRouterRejections"
                      class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-3 rounded-xl mb-2"
                      :class="t.user_id === 'zoom-ai-router' ? '' : 'bg-white'">
-                  <!-- Replay button (appears on hover) - Hidden for AI responses, only shown for user messages -->
-                  <button 
-                    x-show="t.user_id !== 'zoom-ai' && t.user_id !== 'system'"
+                  <!-- Replay button (appears on hover) - Hidden for AI responses, router decisions, and system messages -->
+                  <button
+                    x-show="t.user_id !== 'zoom-ai' && t.user_id !== 'system' && t.user_id !== 'zoom-ai-router'"
                     @click="replayMessage(t)"
                     class="absolute top-3 right-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-white hover:bg-blue-50 rounded"
                     title="Replay this message"
@@ -2088,14 +2088,39 @@
                 data_preview: content.data?.substring(0, 100),
                 has_tools: !!content.tools,
                 has_routing: !!content.routing,
-                original_message: content.original_message?.substring(0, 50)
+                original_message: content.original_message?.substring(0, 50),
+                has_scratchpad: !!content.scratchpad,
+                has_directives: !!content.directives
               });
-              
+
+              // Check for scratchpad/directives updates in SSE content
+              if (content.scratchpad) {
+                console.log('📝 [SSE] Scratchpad data found, dispatching update event');
+                window.dispatchEvent(new CustomEvent('scratchpad-updated-sse', {
+                  detail: {
+                    content: content.scratchpad.content,
+                    timestamp: content.scratchpad.timestamp,
+                    updatedBy: 'ai'
+                  }
+                }));
+              }
+
+              if (content.directives) {
+                console.log('📋 [SSE] Directives data found, dispatching update event');
+                window.dispatchEvent(new CustomEvent('directive-updated-sse', {
+                  detail: {
+                    content: content.directives.content,
+                    timestamp: content.directives.timestamp,
+                    updatedBy: 'ai'
+                  }
+                }));
+              }
+
               // Call handleNewTranscript and measure timing
               const startTime = performance.now();
               this.handleNewTranscript(content);
               const duration = performance.now() - startTime;
-              
+
               console.log(`✅ [SSE ${timestamp}] handleNewTranscript completed in ${duration.toFixed(2)}ms`);
             } catch (e) {
               console.error(`❌ [SSE ${timestamp}] Error processing transcript:`, e);
@@ -3193,8 +3218,33 @@
               console.log('📨 Backend response received:', {
                 has_response_transcript: !!result.response_transcript,
                 sse_broadcast_attempted: result.sse_broadcast_attempted,
-                sse_client_count: result.sse_client_count
+                sse_client_count: result.sse_client_count,
+                has_scratchpad: !!result.response_transcript?.scratchpad,
+                has_directives: !!result.response_transcript?.directives
               });
+
+              // Update scratchpad/directives if included in response
+              if (result.response_transcript?.scratchpad) {
+                console.log('📝 Updating scratchpad from API response');
+                window.dispatchEvent(new CustomEvent('scratchpad-updated-sse', {
+                  detail: {
+                    content: result.response_transcript.scratchpad.content,
+                    timestamp: result.response_transcript.scratchpad.timestamp,
+                    updatedBy: 'ai'
+                  }
+                }));
+              }
+
+              if (result.response_transcript?.directives) {
+                console.log('📋 Updating directives from API response');
+                window.dispatchEvent(new CustomEvent('directive-updated-sse', {
+                  detail: {
+                    content: result.response_transcript.directives.content,
+                    timestamp: result.response_transcript.directives.timestamp,
+                    updatedBy: 'ai'
+                  }
+                }));
+              }
 
               // Handle skipped responses (router decided not to respond)
               if (result.skipped || result.detected === false) {

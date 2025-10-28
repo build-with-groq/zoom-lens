@@ -218,8 +218,8 @@ export async function evaluateResponseNeed(groqClient, config) {
     };
   }
 
-  // Build context from chat history
-  const recentHistory = chatHistory.slice(-10);
+  // Build context from chat history (increased from 10 to 15 for better continuity)
+  const recentHistory = chatHistory.slice(-15);
   const historyContext = recentHistory.length > 0
     ? recentHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')
     : 'No prior conversation';

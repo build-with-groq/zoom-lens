@@ -1,11 +1,15 @@
 /**
  * Agent Router
- * Simple system for swapping between agent-1 and agent-2
+ * System for managing experimental agents
+ *
+ * Currently active: agent-1 (production implementation)
  *
  * Usage:
- * 1. Set ACTIVE_AGENT environment variable: export ACTIVE_AGENT=agent-2
+ * 1. Set ACTIVE_AGENT environment variable: export ACTIVE_AGENT=agent-1
  * 2. Or change ACTIVE_AGENT in config below
  * 3. Import getActiveAgent() in main.js
+ *
+ * Future experiments can be added to AGENT_REGISTRY below
  */
 
 // ============================================================================
@@ -14,7 +18,7 @@
 
 /**
  * Active agent selection
- * Options: 'agent-1' | 'agent-2'
+ * Options: 'agent-1' (more can be added to registry below)
  *
  * Can be overridden by ACTIVE_AGENT environment variable
  */
@@ -30,22 +34,26 @@ console.log(`${'='.repeat(80)}\n`);
 
 /**
  * Agent configurations and metadata
+ * Add new experimental agents here as you develop them
  */
 export const AGENT_REGISTRY = {
   'agent-1': {
-    name: 'Agent-1: Always-On Assistant',
-    description: 'Original implementation - responds to everything',
+    name: 'Agent-1: Production Assistant',
+    description: 'Current production implementation with intelligent routing, tool selection, and response filtering',
     modulePath: './experiments/agent-1/agent-1-inference.js',
-    supportsFiltering: false,
-    supportsOrchestration: false
-  },
-  'agent-2': {
-    name: 'Agent-2: Thoughtful Assistant',
-    description: 'Poke-inspired - filters responses, stays silent when appropriate',
-    modulePath: './experiments/agent-2/agent-2-inference.js',
     supportsFiltering: true,
-    supportsOrchestration: true
+    supportsOrchestration: true,
+    supportsScratchpad: true,
+    supportsDiscovery: true
   }
+  // Add future experiments here:
+  // 'agent-2': {
+  //   name: 'Agent-2: Experimental Name',
+  //   description: 'Description of what this agent does differently',
+  //   modulePath: './experiments/agent-2/agent-2-inference.js',
+  //   supportsFiltering: true,
+  //   supportsOrchestration: false
+  // }
 };
 
 // ============================================================================
@@ -80,19 +88,6 @@ export async function getActiveAgent() {
     };
   } catch (error) {
     console.error(`❌ Failed to load agent: ${error.message}`);
-
-    // Fallback to agent-1 if agent-2 fails
-    if (ACTIVE_AGENT !== 'agent-1') {
-      console.log(`⚠️ Falling back to agent-1...`);
-      const fallbackModule = await import('./experiments/agent-1/agent-1-inference.js');
-      return {
-        ...fallbackModule,
-        config: AGENT_REGISTRY['agent-1'],
-        agentId: 'agent-1',
-        fallback: true
-      };
-    }
-
     throw error;
   }
 }
@@ -157,79 +152,48 @@ export async function switchAgent(agentId) {
 // ============================================================================
 
 /**
- * Test both agents with the same input (useful for comparison)
+ * Test all registered agents with the same input (useful for comparison)
  * @param {string} transcript - Test input
  * @param {string} userName - User name
  * @param {Array} chatHistory - Chat history
- * @returns {Promise<Object>} Results from both agents
+ * @returns {Promise<Object>} Results from all agents
  */
-export async function testBothAgents(transcript, userName, chatHistory = []) {
+export async function testAllAgents(transcript, userName, chatHistory = []) {
+  const agentIds = listAvailableAgents();
+
   console.log(`\n${'='.repeat(80)}`);
-  console.log(`🧪 TESTING BOTH AGENTS`);
+  console.log(`🧪 TESTING ALL AGENTS (${agentIds.length} total)`);
   console.log(`   Input: "${transcript}"`);
   console.log(`${'='.repeat(80)}\n`);
 
   const results = {};
 
-  // Test agent-1
-  try {
-    console.log(`\n--- Testing Agent-1 ---`);
-    const agent1 = await switchAgent('agent-1');
-    const result1 = await agent1.performGroqInference(
-      transcript,
-      userName,
-      { meeting: true },
-      chatHistory,
-      false
-    );
-    results['agent-1'] = {
-      success: true,
-      response: result1.response,
-      detected: result1.detected,
-      tools: result1.tools
-    };
-    console.log(`✅ Agent-1 completed`);
-  } catch (error) {
-    console.error(`❌ Agent-1 failed:`, error.message);
-    results['agent-1'] = {
-      success: false,
-      error: error.message
-    };
-  }
-
-  // Test agent-2 (if it exists)
-  try {
-    console.log(`\n--- Testing Agent-2 ---`);
-    const agent2 = await switchAgent('agent-2');
-
-    if (agent2.performGroqInference) {
-      const result2 = await agent2.performGroqInference(
+  // Test each registered agent
+  for (const agentId of agentIds) {
+    try {
+      console.log(`\n--- Testing ${agentId} ---`);
+      const agent = await switchAgent(agentId);
+      const result = await agent.performGroqInference(
         transcript,
         userName,
         { meeting: true },
         chatHistory,
         false
       );
-      results['agent-2'] = {
+      results[agentId] = {
         success: true,
-        response: result2.response,
-        detected: result2.detected,
-        tools: result2.tools,
-        waited: result2.waited || false
+        response: result.response,
+        detected: result.detected,
+        tools: result.tools
       };
-      console.log(`✅ Agent-2 completed`);
-    } else {
-      results['agent-2'] = {
+      console.log(`✅ ${agentId} completed`);
+    } catch (error) {
+      console.error(`❌ ${agentId} failed:`, error.message);
+      results[agentId] = {
         success: false,
-        error: 'Agent-2 inference not yet implemented'
+        error: error.message
       };
     }
-  } catch (error) {
-    console.error(`❌ Agent-2 failed:`, error.message);
-    results['agent-2'] = {
-      success: false,
-      error: error.message
-    };
   }
 
   // Print comparison
@@ -237,21 +201,16 @@ export async function testBothAgents(transcript, userName, chatHistory = []) {
   console.log(`📊 COMPARISON RESULTS`);
   console.log(`${'='.repeat(80)}`);
 
-  console.log(`\n🤖 Agent-1 (Always-On):`);
-  if (results['agent-1'].success) {
-    console.log(`   Detected: ${results['agent-1'].detected}`);
-    console.log(`   Response: ${results['agent-1'].response?.substring(0, 100)}...`);
-  } else {
-    console.log(`   ❌ Error: ${results['agent-1'].error}`);
-  }
-
-  console.log(`\n🤖 Agent-2 (Thoughtful):`);
-  if (results['agent-2'].success) {
-    console.log(`   Detected: ${results['agent-2'].detected}`);
-    console.log(`   Waited: ${results['agent-2'].waited || false}`);
-    console.log(`   Response: ${results['agent-2'].response?.substring(0, 100)}...`);
-  } else {
-    console.log(`   ❌ Error: ${results['agent-2'].error}`);
+  for (const agentId of agentIds) {
+    const agentConfig = AGENT_REGISTRY[agentId];
+    console.log(`\n🤖 ${agentConfig.name}:`);
+    if (results[agentId].success) {
+      console.log(`   Detected: ${results[agentId].detected}`);
+      console.log(`   Tools: ${results[agentId].tools?.length || 0}`);
+      console.log(`   Response: ${results[agentId].response?.substring(0, 100)}...`);
+    } else {
+      console.log(`   ❌ Error: ${results[agentId].error}`);
+    }
   }
 
   console.log(`\n${'='.repeat(80)}\n`);

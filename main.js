@@ -979,7 +979,11 @@ app.post('/api/groq-inference', async (c) => {
 
     // Prepare chat history for the router (filter out system messages and limit to recent)
     const filteredChatHistory = (chat_history || [])
-      .filter(msg => msg.user_id !== 'system' && msg.data)
+      .filter(msg =>
+        msg.user_id !== 'system' &&
+        msg.user_id !== 'zoom-ai-router' &&  // Exclude router decision messages
+        msg.data
+      )
       .slice(-10); // Keep last 10 messages for context
 
     // Pass request headers for bearer token passthrough
@@ -1110,7 +1114,11 @@ app.post('/api/trigger-groq', async (c) => {
 
     // Prepare chat history for the router (filter out system messages and limit to recent)
     const filteredChatHistory = (chat_history || [])
-      .filter(msg => msg.user_id !== 'system' && msg.data)
+      .filter(msg =>
+        msg.user_id !== 'system' &&
+        msg.user_id !== 'zoom-ai-router' &&  // Exclude router decision messages
+        msg.data
+      )
       .slice(-10); // Keep last 10 messages for context
 
     console.log(`   📋 Filtered chat history: ${filteredChatHistory.length} messages`);
@@ -1228,7 +1236,10 @@ app.post('/api/trigger-groq', async (c) => {
       tools: result.tools || [],
       routing: result.routing || { reasoning: 'Direct routing', primaryIntent: 'general', confidence: 0.5 },
       original_message: transcript,
-      citations: result.citations || []
+      citations: result.citations || [],
+      // Include scratchpad/directives so frontend can update UI
+      scratchpad: result.scratchpad || null,
+      directives: result.directives || null
     };
 
     // Store response transcript for polling endpoint
@@ -1503,10 +1514,18 @@ app.post('/api/discovery-analysis', async (c) => {
 
     // Build chat history for context - use MORE messages for better context
     // Take up to 50 messages (was 20) to give discovery full conversation view
-    const chatHistory = transcripts.slice(0, 50).reverse().map(t => ({
-      role: 'user',
-      content: `${t.user_name || 'User'}: ${t.data}`
-    }));
+    const chatHistory = transcripts
+      .filter(t =>
+        t.user_id !== 'system' &&
+        t.user_id !== 'zoom-ai-router' &&  // Exclude router decision messages
+        t.data
+      )
+      .slice(0, 50)
+      .reverse()
+      .map(t => ({
+        role: 'user',
+        content: `${t.user_name || 'User'}: ${t.data}`
+      }));
 
     // Use cache-aware discovery evaluation
     console.log(`🤔 Evaluating discovery need with cache/queue awareness...`);
