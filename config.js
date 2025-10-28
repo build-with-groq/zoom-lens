@@ -50,3 +50,27 @@ export const INSTANCE_ID = (typeof crypto !== 'undefined' && 'randomUUID' in cry
   : Math.random().toString(36).slice(2);
 export const bc = (typeof BroadcastChannel !== 'undefined') ? new BroadcastChannel('rtms-transcripts') : null;
 
+// Feedback Loop Prevention - AI Message Identifiers
+// IMPORTANT: Add any new AI-generated message identifiers here to prevent feedback loops
+export const AI_IDENTIFIERS = {
+  // user_id values that indicate AI-generated messages
+  user_ids: [
+    'zoom-ai',           // Main AI assistant responses
+    'discovery-ai',      // Discovery Mode insights
+    'zoom-ai-router',    // Router decision broadcasts
+    'system',            // System messages
+  ],
+  // user_name values that indicate AI-generated messages
+  user_names: [
+    'Zoom AI Assistant', // Main AI assistant display name
+    'Discovery',         // Discovery Mode display name
+    'Router Decision',   // Router decision display name
+  ]
+};
+
+// Helper function to check if a message is AI-generated
+export function isAIGeneratedMessage(user_id, user_name) {
+  return AI_IDENTIFIERS.user_ids.includes(user_id) ||
+         AI_IDENTIFIERS.user_names.includes(user_name);
+}
+

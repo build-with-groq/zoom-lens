@@ -1,286 +1,126 @@
-# Zoom RTMS Transcript Service
+# Zoom Lens V2 - Refactored Architecture
 
-A real-time transcript streaming service for Zoom meetings using the Zoom Real-Time Meeting Service (RTMS) API. This demo showcases live transcription capabilities and is designed to integrate with Groq Compound for advanced AI processing.
+> Modular, extensible AI agent framework with support for multiple agent experiments
 
-## 🚀 Features
+## Overview
 
-- **Real-Time Transcription**: Live transcript streaming from Zoom meetings
-- **WebSocket Integration**: Direct connection to Zoom's RTMS WebSocket endpoints
-- **Server-Sent Events**: Real-time UI updates for transcript display
-- **Webhook Handling**: Automatic handling of Zoom RTMS lifecycle events
-- **Security Headers**: OWASP-compliant security headers implementation
-- **Cross-Platform**: Runs on Deno, compatible with Val Town deployment
-- **Future AI Integration**: Planned integration with Groq Compound for intelligent transcript processing
+Zoom Lens V2 is a refactored version of the original Zoom Lens AI-powered meeting assistant. The primary goal of this refactor is to create a modular architecture that allows for easy experimentation with different agent implementations while sharing common utilities and infrastructure.
 
-## 📋 Prerequisites
+## Key Improvements
 
-- [Deno](https://deno.com/) runtime
-- Zoom App Marketplace account with RTMS enabled
-- Environment variables configured (see below)
+### 1. **Modular Architecture**
+- Core utilities extracted into reusable `/utils` directory
+- Agent-specific code isolated in `/experiments/agent-{n}` directories
+- Clear separation between infrastructure and agent logic
 
-## 🔧 Setup
+### 2. **Reusable Utilities**
+- **Trigger Detection**: Configurable keyword/greeting detection system
+- **Deduplication**: Request deduplication with time-window tracking
+- **SSE Broadcasting**: Server-sent events for real-time updates
+- **Context Strategy**: Smart chat history management
+- **Tool Registry**: Framework for managing MCP and built-in tools
+- **WebSocket Core**: Generic WebSocket connection management
+- **Auth Core**: Multi-strategy authentication handling
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd zoom-rtms
-   ```
+### 3. **Experiment-Driven Development**
+- Each agent variant lives in its own experiment directory
+- Easy to compare different approaches side-by-side
+- Agent-1 maintains 100% compatibility with v1 functionality
+- Future agents (agent-2, agent-3) can be added without affecting existing ones
 
-2. **Install dependencies**
-   ```bash
-   # Dependencies are automatically managed by Deno
-   # No npm install required
-   ```
-
-3. **Configure environment variables**
-
-   Create a `.env` file in the project root:
-
-   ```env
-   # Zoom RTMS Credentials (from Zoom App Marketplace)
-   ZOOM_CLIENT_ID=your_zoom_client_id
-   ZOOM_CLIENT_SECRET=your_zoom_client_secret
-   ZOOM_SECRET_TOKEN=your_zoom_secret_token
-
-   # Optional: Custom webhook path (defaults to /webhook)
-   WEBHOOK_PATH=/webhook
-   
-   # Groq API Key
-   GROQ_API_KEY=your_groq_api_key
-   
-   # Salesforce MCP Configuration
-   SALESFORCE_MCP_URL=your_salesforce_mcp_url
-   
-   # AI Model Configuration (Optional - Override to test different models)
-   # All default to their specified fallback models if not set
-   
-   # Intelligent routing decisions (default: openai/gpt-oss-20b)
-   MODEL_ROUTER=openai/gpt-oss-20b
-   
-   # Discovery mode analysis (default: openai/gpt-oss-20b)
-   MODEL_DISCOVERY=openai/gpt-oss-20b
-   
-   # Fact extraction from research (default: openai/gpt-oss-20b)
-   MODEL_EXTRACTOR=openai/gpt-oss-20b
-   
-   # Text compression/distillation (default: openai/gpt-oss-20b)
-   MODEL_COMPRESSOR=openai/gpt-oss-20b
-   
-   # Main inference with MCP tools (default: openai/gpt-oss-120b)
-   MODEL_INFERENCE=openai/gpt-oss-120b
-   
-   # Direct answers without tools (default: openai/gpt-oss-120b)
-   MODEL_DIRECT_ANSWER=openai/gpt-oss-120b
-   
-   # Multi-tool response synthesis (default: openai/gpt-oss-120b)
-   MODEL_SYNTHESIS=openai/gpt-oss-120b
-   ```
-
-## 🏃 Running the Application
-
-### Development Mode
-```bash
-deno task print
-# or directly:
-deno serve --port 9995 --watch --allow-read --allow-env --allow-write --allow-net ./main.js
-```
-
-### Production Deployment
-```bash
-deno task prod
-```
-
-The application will be available at:
-- **Main UI**: `http://localhost:9995/`
-- **Webhook Endpoint**: `http://localhost:9995/webhook`
-- **SSE Stream**: `http://localhost:9995/events`
-
-## 🏗️ Architecture
-
-### Components
-
-1. **Webhook Handler** (`/webhook`)
-   - Receives RTMS lifecycle events from Zoom
-   - Handles meeting start/stop notifications
-   - Validates webhook signatures
-
-2. **WebSocket Connections**
-   - **Signaling WebSocket**: Establishes RTMS session
-   - **Media WebSocket**: Receives real-time transcript data
-
-3. **Server-Sent Events** (`/events`)
-   - Streams transcript data to connected clients
-   - Cross-isolate broadcasting for Deno Deploy
-
-4. **Live UI** (`/`)
-   - Real-time transcript display
-   - EventSource-based updates
-   - Dark theme with monospace font (Menlo)
-
-### Data Flow
+## Directory Structure
 
 ```
-Zoom Meeting → RTMS Webhook → Signaling WS → Media WS → Transcripts → SSE → UI
+zoom-lens-v2/
+├── utils/                              # Shared utility modules
+│   ├── trigger-detection-utils.js      # Configurable trigger detection
+│   ├── deduplication-utils.js          # Request deduplication
+│   ├── sse-broadcast-utils.js          # SSE client management
+│   ├── context-strategy-utils.js       # Chat history context management
+│   ├── tool-registry-core.js           # Tool registry framework
+│   ├── websocket-core-utils.js         # WebSocket helpers
+│   └── auth-core-utils.js              # Authentication utilities
+│
+├── experiments/                        # Agent experiments
+│   ├── agent-1/                        # Agent-1: Original Zoom Lens (always-on)
+│   │   ├── agent-1-config.js           # Agent configuration
+│   │   └── agent-1-inference.js        # AI inference logic
+│   └── agent-2/                        # Agent-2: Poke-inspired (thoughtful filtering)
+│       ├── agent-2-config.js           # Interaction + Execution agent config
+│       ├── README.md                   # Architecture documentation
+│       ├── QUICK_START.md              # 5-minute setup guide
+│       └── INTEGRATION_EXAMPLE.js      # Usage examples
+│
+├── main.js                             # Main application entry point
+├── config.js                           # Environment configuration
+├── auth-utils.js                       # Auth implementation
+├── crypto-utils.js                     # Cryptographic utilities
+├── styles.js                           # UI styling
+├── websocket-utils.js                  # Zoom RTMS WebSocket handlers
+├── tool-registry-unified.js            # Tool definitions
+├── salesforce-focus.js                 # Salesforce context tracking
+├── salesforce-routes.js                # Salesforce OAuth routes
+├── frontend/                           # Frontend UI
+│   └── index.html                      # Live transcript viewer
+├── deno.json                           # Deno configuration
+└── README.md                           # This file
 ```
 
-## 🔐 Zoom RTMS Configuration
-
-1. **Create a Zoom App** in the [Zoom App Marketplace](https://marketplace.zoom.us/)
-2. **Enable RTMS** in your app settings
-3. **Configure Webhook URL** pointing to your deployed endpoint
-4. **Set Event Types** to include:
-   - `meeting.rtms_started`
-   - `meeting.rtms_stopped`
-   - `endpoint.url_validation`
-
-## 🌐 API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Live transcript viewer UI |
-| `/webhook` | POST | Zoom RTMS webhook handler |
-| `/events` | GET | Server-Sent Events stream |
-| `/sse/message` | POST | MCP tool calls with bearer token auth |
-| `/api/trigger-groq` | POST | Process Groq triggers with optional bearer token |
-| `/api/groq-inference` | POST | Groq inference with optional bearer token |
-
-### Bearer Token Authentication
-
-The Salesforce MCP server now supports bearer token authentication for external API clients. This allows you to pass Salesforce credentials directly in the request headers instead of relying on stored credentials.
-
-#### Method 1: Direct MCP Request (Recommended for API Clients)
-
-**Endpoint**: `POST /sse/message`
-
-Pass credentials in HTTP headers:
-
-```bash
-curl -X POST https://your-server.com/sse/message \
-  -H "Authorization: Bearer YOUR_SALESFORCE_TOKEN" \
-  -H "X-Salesforce-Instance-Url: https://yourinstance.salesforce.com" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "method": "tools/call",
-    "params": {
-      "name": "sf_search_leads",
-      "arguments": {
-        "company": "Acme"
-      }
-    }
-  }'
-```
-
-**Supported Tools**:
-- `sf_search_leads` - Search for leads
-- `sf_create_lead` - Create a new lead
-- `sf_run_soql_query` - Execute SOQL queries
-- All other Salesforce MCP functions
-
-**Response Format**:
-```json
-{
-  "success": true,
-  "method": "tools/call",
-  "tool": "sf_search_leads",
-  "response": "Found 5 leads at Acme Corp...",
-  "tools": [...],
-  "routing": {...}
-}
-```
-
-#### Method 2: Natural Language with Bearer Token
-
-**Endpoint**: `POST /api/trigger-groq` or `POST /api/groq-inference`
-
-Use natural language with bearer token authentication:
-
-```bash
-curl -X POST https://your-server.com/api/trigger-groq \
-  -H "Authorization: Bearer YOUR_SALESFORCE_TOKEN" \
-  -H "X-Salesforce-Instance-Url: https://yourinstance.salesforce.com" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "transcript": "Hey Groq, search for leads in Acme Corp",
-    "user_name": "API Client",
-    "context": "api_request"
-  }'
-```
-
-**Benefits**:
-- No need to store credentials on the server
-- Each request is authenticated independently
-- Perfect for serverless deployments (like Deno Deploy)
-- Backwards compatible with existing credential storage
-
-#### Testing Bearer Token Auth
-
-Run the test script to verify bearer token authentication:
+## Running the Application
 
 ```bash
 # Set environment variables
-export TEST_SALESFORCE_TOKEN="your_token_here"
-export TEST_SALESFORCE_INSTANCE_URL="https://yourinstance.salesforce.com"
-export TEST_SERVER_URL="http://localhost:8000"
+export ZOOM_CLIENT_ID="your_zoom_client_id"
+export ZOOM_CLIENT_SECRET="your_zoom_client_secret"
+export ZOOM_SECRET_TOKEN="your_zoom_secret_token"
+export GROQ_API_KEY="your_groq_api_key"
 
-# Run the test
-deno run --allow-net --allow-env test-bearer-token.js
+# Run locally
+deno run --allow-net --allow-env --allow-read main.js
+
+# Deploy to Deno Deploy
+deployctl deploy --project=your-project main.js
 ```
 
-## 🚀 Future Integration: Groq Compound
+## Available Agents
 
-This project is designed to integrate with [Groq Compound](https://console.groq.com/docs/compound/systems/compound) for intelligent transcript processing:
+### Agent-1: The Always-On Assistant
+- **Philosophy**: "Always ready to help"
+- **Architecture**: Single agent, direct responses
+- **Best For**: Active Q&A sessions, testing, development
+- **Characteristics**: Responds to everything, predictable, no filtering
 
-- **Real-time Analysis**: Process transcripts as they're received
-- **Summarization**: Generate meeting summaries automatically
-- **Action Items**: Extract tasks and follow-ups
-- **Sentiment Analysis**: Analyze participant engagement
-- **Translation**: Real-time language translation
-- **Q&A**: Answer questions about meeting content
+### Agent-2: The Thoughtful Assistant ⭐ NEW
+- **Philosophy**: "Better to stay silent than be annoying"
+- **Architecture**: Poke-inspired orchestration (Interaction Agent + Execution Agent)
+- **Best For**: Background assistance, discovery mode, meeting contexts
+- **Characteristics**: Filters outputs, stays silent when appropriate, rate-limited discoveries
 
-### Planned Features
-- Live transcript enhancement
-- Automated meeting minutes
-- Keyword extraction and tagging
-- Speaker identification improvements
-- Content moderation and filtering
+**Key Innovation**: Separates eager execution from thoughtful presentation
+- **Interaction Agent** acts as gatekeeper, decides what reaches user
+- **Execution Agent** can be thorough without being annoying
+- Inspired by [Poke's multi-agent architecture](https://shlokkhemani.com/writing/openpoke)
 
-## 📚 Documentation
+📖 **Learn More**:
+- [Agent-2 README](./experiments/agent-2/README.md) - Full architecture explanation
+- [Agent-2 Quick Start](./experiments/agent-2/QUICK_START.md) - 5-minute setup
+- [Agent Comparison](./AGENT_COMPARISON.md) - Detailed comparison of agent-1 vs agent-2
 
-- [Zoom RTMS Documentation](https://developers.zoom.us/docs/rtms/)
-- [Groq Compound API](https://console.groq.com/docs/compound/systems/compound)
-- [Hono Framework](https://hono.dev/)
-- [Deno Deploy](https://deno.com/deploy)
+### Choosing an Agent
 
-## 🔧 Development
+| Scenario | Recommended Agent |
+|----------|-------------------|
+| Active Q&A session | Agent-1 |
+| Background meeting assistant | Agent-2 ✅ |
+| Discovery mode enabled | Agent-2 ✅ |
+| Testing/development | Agent-1 |
+| User prefers quiet assistance | Agent-2 ✅ |
 
-### Code Structure
-```
-├── main.js          # Main application
-├── deno.json        # Deno configuration
-├── deno.lock        # Dependency lock file
-└── README.md        # This file
-```
+## Benefits
 
-### Key Technologies
-- **Runtime**: Deno
-- **Framework**: Hono
-- **WebSockets**: Native WebSocket API
-- **Security**: OWASP-compliant headers
-- **Deployment**: Deno Deploy compatible
+- **Experimentation**: Easy to try new approaches
+- **Maintainability**: Clear separation of concerns
+- **Reusability**: Common utilities shared across agents
+- **Scalability**: Add new agents without modifying core infrastructure
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## 📄 License
-
-MIT License - see LICENSE file for details
-
-## ⚠️ Disclaimer
-
-This is a demonstration project for educational and development purposes. Ensure compliance with Zoom's terms of service and data privacy regulations when handling meeting transcripts.</content>
-</xai:function_call">README.md
+See full documentation in README for detailed utility usage examples.

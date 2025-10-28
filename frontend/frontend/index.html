@@ -29,7 +29,6 @@
       display: none;  /* Chrome, Safari and Opera */
     }
 
-
     /* Markdown content styling */
     .markdown-content {
       line-height: 1.6;
@@ -203,31 +202,12 @@
                   <span x-show="requireHeyZoom">REQUIRED</span>
                   <span x-show="!requireHeyZoom">AUTO</span>
                 </span>
-
-                <select x-show="!requireHeyZoom" x-model="heyZoomStrategy" @change="localStorage.setItem('heyZoomStrategy', heyZoomStrategy)" class="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
-                  <option value="everything">Everything!!!</option>
-                  <option value="eager">Eager!</option>
-                  <option value="reluctant">Reluctant.</option>
-                  <option value="shy">Shy...</option>
-                </select>
               </div>
-
+              
               <div class="flex items-center gap-2">
                 <label class="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    x-model="showRouterRejections"
-                    @change="localStorage.setItem('showRouterRejections', showRouterRejections)"
-                    class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span class="text-xs text-gray-600">Show AI rejection decisions</span>
-                </label>
-              </div>
-
-              <div class="flex items-center gap-2">
-                <label class="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
+                  <input 
+                    type="checkbox" 
                     x-model="discoveryMode"
                     class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   />
@@ -238,19 +218,6 @@
                   :class="discoveryMode ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'"
                   x-text="discoveryMode ? 'ON' : 'OFF'"
                 ></span>
-
-                <select
-                  x-show="discoveryMode"
-                  x-model="discoveryStrategy"
-                  @change="localStorage.setItem('discoveryStrategy', discoveryStrategy)"
-                  class="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="everything">Everything!!!</option>
-                  <option value="eager">Eager!</option>
-                  <option value="reluctant">Reluctant.</option>
-                  <option value="shy">Shy...</option>
-                </select>
-
               </div>
               
               <div class="flex items-center gap-2">
@@ -329,7 +296,7 @@
             </div>
           </div>
           
-          <div x-show="!transcripts.some(t => t.user_id === 'discovery-ai' && !t.skipped)" class="p-8 text-center text-text-muted">
+          <div x-show="!transcripts.some(t => t.user_id === 'discovery-ai')" class="p-8 text-center text-text-muted">
             <div class="text-4xl mb-3 opacity-50">🔮</div>
             <p class="font-medium text-gray-700">Discovery Mode</p>
             <p class="text-xs mt-1" x-show="!discoveryMode">Enable Discovery Mode to automatically analyze conversations and provide background insights.</p>
@@ -337,7 +304,7 @@
             <p class="text-xs mt-2 text-gray-500">Background analysis uses available tools to enrich your conversation</p>
           </div>
           <div>
-              <template x-for="(t, i) in transcripts.filter(t => t.user_id === 'discovery-ai').sort((a, b) => b.timestamp - a.timestamp)" :key="i">
+              <template x-for="(t, i) in transcripts.filter(t => t.user_id === 'discovery-ai')" :key="i">
                 <div>
                   <!-- Processing messages: subtle, no container (only show if actively processing) -->
                   <div x-show="t.processing" class="max-w-4xl mx-2 md:mx-auto py-2 mb-2">
@@ -347,9 +314,7 @@
                     </div>
                   </div>
                   
-                  <div x-show="!t.processing && (!t.skipped || showRouterRejections)"
-                       class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 rounded-xl shadow-sm mb-2"
-                       :class="t.skipped ? '' : 'bg-white'">
+                  <div x-show="!t.processing" class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
                     <!-- Replay button (appears on hover) - Hidden for AI responses -->
                     <button 
                       x-show="t.original_message"
@@ -445,7 +410,7 @@
             <p class="text-xs mt-2 text-gray-500">Actions will appear here</p>
           </div>
           <div>
-              <template x-for="(t, i) in transcripts.filter(t => t.user_id === 'zoom-ai' || t.user_id === 'system').sort((a, b) => b.timestamp - a.timestamp)" :key="i">
+              <template x-for="(t, i) in transcripts.filter(t => t.user_id === 'zoom-ai' || t.user_id === 'system')" :key="i">
                 <div>
                   <!-- Processing messages and regular AI responses: same full container format -->
                   <div x-show="t.user_id === 'zoom-ai'" class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2">
@@ -913,10 +878,8 @@
             <p class="text-sm text-gray-500">Conversation transcripts will appear here</p>
           </div>
           <div>
-              <template x-for="(t, i) in transcripts.filter(t => t.user_id !== 'discovery-ai').sort((a, b) => b.timestamp - a.timestamp)" :key="i">
-                <div x-show="t.user_id !== 'zoom-ai-router' || showRouterRejections"
-                     class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-3 rounded-xl mb-2"
-                     :class="t.user_id === 'zoom-ai-router' ? '' : 'bg-white'">
+              <template x-for="(t, i) in transcripts.filter(t => t.user_id !== 'discovery-ai')" :key="i">
+                <div class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-3 bg-white rounded-xl shadow-sm mb-2">
                   <!-- Replay button (appears on hover) - Hidden for AI responses, only shown for user messages -->
                   <button 
                     x-show="t.user_id !== 'zoom-ai' && t.user_id !== 'system'"
@@ -1483,9 +1446,6 @@
         requireHeyZoom: true, // Toggle for requiring "Hey Zoom" trigger (defaults to true)
         discoveryMode: false, // Toggle for Discovery Mode
         discoveryDebounceTimer: null, // Timer for debouncing discovery requests
-        heyZoomStrategy: localStorage.getItem('heyZoomStrategy') || 'reluctant', // Strategy for Hey Zoom responses
-        discoveryStrategy: localStorage.getItem('discoveryStrategy') || 'reluctant', // Strategy for Discovery Feed
-        showRouterRejections: localStorage.getItem('showRouterRejections') === 'true', // Show router rejection decisions
         lastDiscoveryTranscriptCount: 0, // Track when we last ran discovery
         triggerDebounceTimer: null, // Timer for debouncing trigger requests
         pendingTranscripts: [], // Store all pending transcripts during debounce period
@@ -1533,20 +1493,9 @@
             console.log(`⏱️ Debounce delay changed: ${value}ms (${(value / 1000).toFixed(1)}s)`);
           });
           
-          // Watch ONLY for USER message changes (not AI/Discovery/System messages)
-          // This prevents infinite loops when AI responses trigger the watcher
-          this.$watch(() => {
-            // Count only user messages (not AI-generated)
-            return this.transcripts.filter(t =>
-              t.user_id !== 'zoom-ai' &&
-              t.user_id !== 'discovery-ai' &&
-              t.user_id !== 'zoom-ai-router' &&
-              t.user_id !== 'system'
-            ).length;
-          }, (newCount, oldCount) => {
-            // Only trigger discovery if discoveryMode is enabled AND user message count changed
-            if (this.discoveryMode && newCount > oldCount) {
-              console.log(`🔮 User message count changed: ${oldCount} → ${newCount}, scheduling discovery...`);
+          // Watch for transcript changes and trigger discovery if enabled
+          this.$watch('transcripts', () => {
+            if (this.discoveryMode) {
               this.scheduleDiscoveryAnalysis();
             }
           });
@@ -1643,10 +1592,9 @@
             console.log('🔮 Running Discovery Mode analysis...');
             
             // Filter to only user transcripts for analysis
-            const userTranscripts = this.transcripts.filter(t =>
-              t.user_id !== 'zoom-ai' &&
-              t.user_id !== 'discovery-ai' &&
-              t.user_id !== 'zoom-ai-router' &&
+            const userTranscripts = this.transcripts.filter(t => 
+              t.user_id !== 'zoom-ai' && 
+              t.user_id !== 'discovery-ai' && 
               t.user_id !== 'system'
             );
             
@@ -1678,8 +1626,7 @@
               },
               body: JSON.stringify({
                 transcripts: userTranscripts,
-                full_history: this.transcripts,
-                discovery_strategy: this.discoveryStrategy // Send Discovery Feed strategy
+                full_history: this.transcripts
               })
             });
             
@@ -1708,10 +1655,9 @@
                   timestamp: Date.now(),
                   tools: insight.tools || [],
                   routing: insight.routing,
-                  citations: insight.citations || [],
-                  skipped: insight.skipped || false  // Preserve skipped flag
+                  citations: insight.citations || []
                 };
-
+                
                 this.transcripts.unshift(discoveryTranscript);
               });
               
@@ -2002,19 +1948,12 @@
           console.log('🎯 [HANDLER] Corrected data:', correctedData);
 
           // Add new transcript with corrected text for display
-          // Use backend timestamp for AI-generated messages (router decisions, AI responses)
-          // to maintain proper chronological order. Use local time for actual Zoom transcripts.
-          const isAIGenerated = content.user_id === 'zoom-ai' ||
-                                content.user_id === 'zoom-ai-router' ||
-                                content.user_id === 'discovery-ai' ||
-                                content.user_id === 'system';
-
           const newTranscript = {
             user_id: content.user_id,
             user_name: content.user_name,
             data: correctedData,
             original_data: originalData, // Keep original for backend processing
-            timestamp: (isAIGenerated && content.timestamp) ? content.timestamp : Date.now(),
+            timestamp: Date.now(), // Always use local time instead of Zoom's timestamp
             corrected: correctedData !== originalData, // Flag if it was corrected
             tools: content.tools, // Include tools info
             routing: content.routing, // Include routing info
@@ -2108,13 +2047,11 @@
           });
           
           // CRITICAL: Never trigger AI for AI-generated messages (check both user_id AND user_name)
-          const isAIMessage = newTranscript.user_id === 'zoom-ai' ||
-                             newTranscript.user_id === 'discovery-ai' ||
-                             newTranscript.user_id === 'zoom-ai-router' ||
+          const isAIMessage = newTranscript.user_id === 'zoom-ai' || 
+                             newTranscript.user_id === 'discovery-ai' || 
                              newTranscript.user_id === 'system' ||
                              newTranscript.user_name === 'Zoom AI Assistant' ||
-                             newTranscript.user_name === 'Discovery' ||
-                             newTranscript.user_name === 'Router Decision';
+                             newTranscript.user_name === 'Discovery';
           
           if (isAIMessage) {
             console.log('🚫 [HANDLER] Blocked AI message from triggering:', newTranscript.user_name);
@@ -2974,8 +2911,7 @@
                   context: 'meeting_transcript', // Same context as before
                   chat_history: this.transcripts, // Send full chat history for context
                   custom_mcps: customMcps, // Send custom MCP configurations
-                  salesforce_credentials: salesforceCredentials, // Send Salesforce credentials for serverless compatibility
-                  hey_zoom_strategy: this.heyZoomStrategy // Send Hey Zoom response strategy
+                  salesforce_credentials: salesforceCredentials // Send Salesforce credentials for serverless compatibility
                 }),
                 signal: controller.signal
               });
@@ -2994,32 +2930,10 @@
                 sse_client_count: result.sse_client_count
               });
 
-              // Handle skipped responses (router decided not to respond)
-              if (result.skipped || result.detected === false) {
-                console.log('⏭️ Response skipped by router:', result.reasoning || result.message);
-
-                // Remove the spinner/processing message
-                const processingMessageIndex = this.transcripts.findIndex(t =>
-                  t.processing &&
-                  !t.completed &&
-                  t.originalTranscript &&
-                  (t.originalTranscript.data === transcript.original_data ||
-                   t.originalTranscript.data === transcript.data)
-                );
-
-                if (processingMessageIndex !== -1) {
-                  console.log('🗑️ Removing spinner for skipped response');
-                  this.transcripts.splice(processingMessageIndex, 1);
-                  this.saveTranscripts();
-                }
-
-                return; // Exit early, no response to show
-              }
-
               // Backend now ALWAYS returns response_transcript as a guaranteed fallback
               // However, we should give SSE a brief moment to deliver first (it's faster)
               // Then use the HTTP response if SSE hasn't delivered yet
-
+              
               if (result.response_transcript) {
                 const responseData = result.response_transcript.data || '';
                 const aiTranscript = {

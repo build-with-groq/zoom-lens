@@ -1,0 +1,299 @@
+/**
+ * Hey Zoom Decision Utilities
+ *
+ * Selective decision-making for Hey Zoom triggers.
+ * Determines whether the assistant should respond based on conversation context.
+ *
+ * Features:
+ * - Cache-aware (won't respond to same query repeatedly)
+ * - Context-aware (understands conversation flow)
+ * - Very selective (defaults to NOT responding)
+ * - Shows reasoning for decisions
+ *
+ * Usage:
+ * ```javascript
+ * import { evaluateResponseNeed, ActionFeedManager } from './utils/heyzoom-decision-utils.js';
+ *
+ * const decision = await evaluateResponseNeed(groqClient, {
+ *   transcript: "hey zoom, what's the weather?",
+ *   chatHistory: [...],
+ *   responseManager,
+ *   heyZoomEnabled: false  // false = use decision agent, true = always respond
+ * });
+ *
+ * if (decision.shouldRespond) {
+ *   // Process the request
+ * } else {
+ *   // Log decision to action feed
+ * }
+ * ```
+ */
+
+import { DiscoveryManager } from './discovery-cache-utils.js';
+import { getHeyZoomStrategy } from './response-strategies.js';
+
+/**
+ * Action Feed Manager
+ * Manages action feed messages including router decisions
+ */
+export class ActionFeedManager {
+  constructor(config = {}) {
+    this.enableLogging = config.enableLogging !== false;
+    this.messages = [];
+    this.maxMessages = config.maxMessages || 100;
+  }
+
+  /**
+   * Add a router decision to the action feed
+   */
+  addRouterDecision(decision) {
+    const message = {
+      type: 'router_decision',
+      timestamp: Date.now(),
+      shouldRespond: decision.shouldRespond,
+      reasoning: decision.reasoning,
+      confidence: decision.confidence,
+      transcript: decision.transcript,
+      cached: decision.cached,
+      queued: decision.queued
+    };
+
+    this.messages.push(message);
+
+    // Keep only recent messages
+    if (this.messages.length > this.maxMessages) {
+      this.messages.shift();
+    }
+
+    if (this.enableLogging) {
+      const icon = decision.shouldRespond ? '✅' : '⏭️';
+      console.log(`${icon} Router Decision: ${decision.shouldRespond ? 'RESPOND' : 'SKIP'}`);
+      console.log(`   Reasoning: ${decision.reasoning}`);
+      console.log(`   Confidence: ${decision.confidence}`);
+    }
+
+    return message;
+  }
+
+  /**
+   * Get recent router decisions
+   */
+  getRecentDecisions(limit = 10) {
+    return this.messages
+      .filter(m => m.type === 'router_decision')
+      .slice(-limit);
+  }
+
+  /**
+   * Get all action feed messages
+   */
+  getAllMessages() {
+    return this.messages;
+  }
+
+  /**
+   * Clear action feed
+   */
+  clear() {
+    this.messages = [];
+    if (this.enableLogging) {
+      console.log('🗑️ Action feed cleared');
+    }
+  }
+}
+
+/**
+ * Evaluate whether Hey Zoom should respond to a message
+ *
+ * @param {Object} groqClient - Groq API client
+ * @param {Object} config - Configuration
+ * @param {string} config.transcript - User's message (with or without "hey zoom")
+ * @param {Array} config.chatHistory - Recent chat history
+ * @param {DiscoveryManager} config.responseManager - Response manager instance (reusing DiscoveryManager)
+ * @param {boolean} config.heyZoomEnabled - Is Hey Zoom toggle ON? (true = always respond, false = use decision agent)
+ * @param {string} config.strategy - Strategy ID ('everything', 'eager', 'reluctant', 'shy')
+ * @param {string} config.model - Model to use for decision
+ * @returns {Promise<Object>} { shouldRespond: boolean, reasoning: string, confidence: number, cached: boolean, queued: boolean }
+ */
+export async function evaluateResponseNeed(groqClient, config) {
+  const {
+    transcript,
+    chatHistory = [],
+    responseManager,
+    heyZoomEnabled = false,
+    strategy = 'reluctant',
+    model = 'llama-3.3-70b-versatile'
+  } = config;
+
+  // Get the strategy configuration
+  const strategyConfig = getHeyZoomStrategy(strategy);
+
+  // If Hey Zoom is explicitly enabled (toggle ON), always respond
+  if (heyZoomEnabled) {
+    return {
+      shouldRespond: true,
+      reasoning: 'Hey Zoom toggle is ON - bypassing decision agent',
+      confidence: 1.0,
+      cached: false,
+      queued: false,
+      bypassedDecisionAgent: true
+    };
+  }
+
+  // Check cache/queue
+  const normalized = transcript.toLowerCase().replace(/hey zoom,?\s*/gi, '').trim();
+  const check = responseManager.checkTopic(normalized);
+
+  if (check.shouldSkip) {
+    return {
+      shouldRespond: false,
+      reasoning: check.cached
+        ? `Already responded to similar query recently (cached)`
+        : `Currently processing similar query (queued)`,
+      confidence: 1.0,
+      cached: check.cached,
+      queued: check.queued
+    };
+  }
+
+  // Keyword-based fallback for obvious requests (before AI evaluation)
+  // This prevents AI models from being overly conservative on clear requests
+  const obviousRequestPatterns = [
+    /what'?s?\s+(?:the\s+)?weather/i,
+    /weather\s+(?:in|at|for)/i,
+    /search\s+(?:for|about)/i,
+    /find\s+(?:me\s+)?(?:information|info|data|details)/i,
+    /look\s+up/i,
+    /can\s+you\s+(?:tell|show|find|search|get)/i,
+    /(?:how\s+)?(?:do\s+i|to)\s+(?:find|search|get|look)/i,
+    /salesforce/i,
+    /crm/i,
+  ];
+
+  const hasObviousRequest = obviousRequestPatterns.some(pattern => pattern.test(normalized));
+
+  if (hasObviousRequest) {
+    console.log('🎯 Obvious request detected via keywords - bypassing conservative AI evaluation');
+    return {
+      shouldRespond: true,
+      reasoning: 'Clear request detected via keyword patterns',
+      confidence: 0.95,
+      cached: false,
+      queued: false,
+      bypassedDecisionAgent: true
+    };
+  }
+
+  // Build context from chat history
+  const recentHistory = chatHistory.slice(-10);
+  const historyContext = recentHistory.length > 0
+    ? recentHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')
+    : 'No prior conversation';
+
+  // Get summary of recent responses
+  const summary = responseManager.getSummary();
+  const recentResponses = summary.cache.items.map(item => item.topic);
+
+  const evaluationPrompt = `You are an assistant decision agent. Your job is to decide if the assistant should respond to a message.
+
+Recent conversation:
+${historyContext}
+
+Latest message: "${transcript}"
+
+Recently responded to (don't repeat these):
+${recentResponses.length > 0 ? recentResponses.map((t, i) => `${i + 1}. ${t}`).join('\n') : '(no recent responses)'}
+
+${strategyConfig.evaluationRules}
+
+Respond with JSON:
+{
+  "should_respond": false,  // true or false based on the strategy rules
+  "reasoning": "Brief explanation",
+  "confidence": 0.95,  // 0-1 scale
+  "category": "acknowledgment|casual|question|request|command"
+}`;
+
+  const response = await groqClient.chat.completions.create({
+    model,
+    messages: [
+      {
+        role: "system",
+        content: strategyConfig.systemPrompt
+      },
+      { role: "user", content: evaluationPrompt }
+    ],
+    temperature: strategyConfig.temperature,
+    max_tokens: 500
+  });
+
+  const content = response.choices[0]?.message?.content;
+
+  // Parse response
+  let decision;
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      decision = JSON.parse(jsonMatch[0]);
+    } else {
+      decision = { should_respond: false, reasoning: 'Failed to parse decision', confidence: 0 };
+    }
+  } catch (parseError) {
+    console.warn('⚠️ Failed to parse response decision:', parseError);
+    decision = { should_respond: false, reasoning: 'Parse error', confidence: 0 };
+  }
+
+  return {
+    shouldRespond: decision.should_respond || false,
+    reasoning: decision.reasoning || 'No reasoning provided',
+    confidence: decision.confidence || 0,
+    category: decision.category || 'unknown',
+    cached: false,
+    queued: false
+  };
+}
+
+/**
+ * Format action feed message for display
+ * @param {Object} message - Action feed message
+ * @returns {string} Formatted message
+ */
+export function formatActionFeedMessage(message) {
+  if (message.type !== 'router_decision') {
+    return JSON.stringify(message);
+  }
+
+  const icon = message.shouldRespond ? '✅' : '⏭️';
+  const status = message.shouldRespond ? 'RESPONDING' : 'SKIPPED';
+  const cacheInfo = message.cached ? ' [CACHED]' : message.queued ? ' [QUEUED]' : '';
+
+  return `${icon} ${status}${cacheInfo}: ${message.reasoning}`;
+}
+
+/**
+ * Create a broadcast message for the action feed
+ * Used to send router decisions to the frontend
+ */
+export function createActionFeedBroadcast(decision, transcript, userMessageTimestamp) {
+  const icon = decision.shouldRespond ? '🤖' : '💭';
+  const action = decision.shouldRespond ? 'Responding' : 'Skipping';
+
+  // Use timestamp slightly after user message so it appears right after in chronological order
+  // This ensures in newest-first view, the decision shows UNDER the AI response
+  const decisionTimestamp = userMessageTimestamp ? userMessageTimestamp + 1 : Date.now();
+
+  return {
+    user_id: 'zoom-ai-router',
+    user_name: 'Router Decision',
+    data: `${icon} ${action}: ${decision.reasoning}`,
+    timestamp: decisionTimestamp,
+    type: 'router_decision',
+    metadata: {
+      shouldRespond: decision.shouldRespond,
+      confidence: decision.confidence,
+      cached: decision.cached,
+      queued: decision.queued,
+      transcript: transcript
+    }
+  };
+}
