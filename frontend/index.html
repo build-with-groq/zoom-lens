@@ -1679,7 +1679,27 @@
           this.loadDiscoverySettings();
           this.loadDebounceSettings();
           this.loadToolRegistry();
-          
+
+          // Add visibility change listener to detect when tab becomes visible/hidden
+          // Critical for voice input when tab might be in background
+          document.addEventListener('visibilitychange', () => {
+            console.log(`👁️ Page visibility changed: ${document.hidden ? 'HIDDEN' : 'VISIBLE'}`);
+
+            if (!document.hidden) {
+              // Tab became visible - check SSE connection
+              console.log('👁️ Tab became visible, checking SSE connection...');
+
+              if (!this.eventSource || this.eventSource.readyState !== EventSource.OPEN) {
+                console.log('🔄 SSE not connected, reconnecting...');
+                this.connectSSE();
+              } else {
+                console.log('✅ SSE already connected');
+              }
+            } else {
+              console.log('👁️ Tab went to background - SSE may disconnect');
+            }
+          });
+
           // Watch for changes to micEnabled and save to localStorage
           this.$watch('micEnabled', (value) => {
             localStorage.setItem('mic-enabled', value.toString());
@@ -1726,7 +1746,11 @@
             // Only trigger discovery if discoveryMode is enabled AND user message count changed
             if (this.discoveryMode && newCount > oldCount) {
               console.log(`🔮 User message count changed: ${oldCount} → ${newCount}, scheduling discovery...`);
+              console.log(`   discoveryMode enabled: ${this.discoveryMode}`);
+              console.log(`   Will fire in 3000ms`);
               this.scheduleDiscoveryAnalysis();
+            } else if (!this.discoveryMode) {
+              console.log(`⏭️ Discovery Mode is OFF - skipping analysis`);
             }
           });
         },
@@ -1794,25 +1818,61 @@
         },
         
         scheduleDiscoveryAnalysis() {
+          console.log('🔮 [scheduleDiscoveryAnalysis] Called');
+
           // Debounce discovery requests to avoid hammering the API
           if (this.discoveryDebounceTimer) {
+            console.log('🔮 [scheduleDiscoveryAnalysis] Clearing existing timer');
             clearTimeout(this.discoveryDebounceTimer);
           }
-          
+
           // Only run discovery if we have new user transcripts (not AI responses)
-          const userTranscripts = this.transcripts.filter(t => 
-            t.user_id !== 'zoom-ai' && 
-            t.user_id !== 'discovery-ai' && 
+          const userTranscripts = this.transcripts.filter(t =>
+            t.user_id !== 'zoom-ai' &&
+            t.user_id !== 'discovery-ai' &&
             t.user_id !== 'system'
           );
-          
+
+          console.log(`🔮 [scheduleDiscoveryAnalysis] User transcripts: ${userTranscripts.length}, Last count: ${this.lastDiscoveryTranscriptCount}`);
+
           // Don't run if no user transcripts or no change since last run
           if (userTranscripts.length === 0 || userTranscripts.length === this.lastDiscoveryTranscriptCount) {
+            console.log('🔮 [scheduleDiscoveryAnalysis] No new transcripts - skipping');
             return;
           }
-          
+
+          // Check if the most recent user message was rejected by the router
+          // If so, skip discovery to avoid wasteful API calls
+          const sortedTranscripts = [...this.transcripts].sort((a, b) => b.timestamp - a.timestamp);
+          const lastUserMessage = sortedTranscripts.find(t =>
+            t.user_id !== 'zoom-ai' &&
+            t.user_id !== 'discovery-ai' &&
+            t.user_id !== 'zoom-ai-router' &&
+            t.user_id !== 'system'
+          );
+
+          console.log(`🔮 [scheduleDiscoveryAnalysis] Last user message:`, lastUserMessage?.data?.substring(0, 50));
+
+          if (lastUserMessage) {
+            // Find the router decision that came after this message (within 5 seconds)
+            const routerDecision = sortedTranscripts.find(t =>
+              t.user_id === 'zoom-ai-router' &&
+              t.timestamp >= lastUserMessage.timestamp &&
+              t.timestamp - lastUserMessage.timestamp < 5000
+            );
+
+            console.log(`🔮 [scheduleDiscoveryAnalysis] Router decision found:`, routerDecision?.data?.substring(0, 50));
+
+            if (routerDecision && routerDecision.data && routerDecision.data.includes('💭 Skipping')) {
+              console.log('🔮 Skipping Discovery: Router rejected the last message, no need for background research');
+              return;
+            }
+          }
+
           // Schedule discovery analysis after a short delay (3 seconds)
+          console.log('🔮 [scheduleDiscoveryAnalysis] Scheduling discovery in 3000ms');
           this.discoveryDebounceTimer = setTimeout(() => {
+            console.log('🔮 [scheduleDiscoveryAnalysis] Timer fired - calling runDiscoveryAnalysis()');
             this.runDiscoveryAnalysis();
           }, 3000);
         },
@@ -2044,10 +2104,11 @@
           const isEmbedded = window.parent !== window || window.location !== window.parent.location;
           const baseUrl = isEmbedded ? window.location.origin : '';
           const sseUrl = `${baseUrl}/events`;
-          
+
           console.log('🔌 [SSE] Attempting to connect to:', sseUrl);
           console.log('🔌 [SSE] Embedded mode:', isEmbedded);
-          
+          console.log('🔌 [SSE] Page visibility:', document.hidden ? 'HIDDEN' : 'VISIBLE');
+
           try {
             this.eventSource = new EventSource(sseUrl);
             console.log('🔌 [SSE] EventSource created, readyState:', this.eventSource.readyState);
@@ -2056,6 +2117,7 @@
               this.isConnected = true;
               this.statusText = 'Connected';
               console.log('✅ [SSE] Connection opened successfully');
+              console.log('✅ [SSE] Page visibility on open:', document.hidden ? 'HIDDEN' : 'VISIBLE');
             });
 
             this.eventSource.addEventListener('error', (error) => {
@@ -2063,14 +2125,16 @@
               this.statusText = 'Disconnected (retrying...)';
               console.error('❌ [SSE] Connection error:', error);
               console.error('❌ [SSE] EventSource readyState:', this.eventSource?.readyState);
+              console.error('❌ [SSE] Page visibility:', document.hidden ? 'HIDDEN (tab in background)' : 'VISIBLE');
 
-              // Retry connection after a delay
+              // Retry connection immediately (not after 5s) when connection drops
+              // This is critical for voice input when tab might be in background
               setTimeout(() => {
                 if (this.eventSource && this.eventSource.readyState === EventSource.CLOSED) {
-                  console.log('🔄 [SSE] Retrying connection...');
+                  console.log('🔄 [SSE] Retrying connection immediately...');
                   this.connectSSE();
                 }
-              }, 5000);
+              }, 1000); // Retry after 1 second instead of 5
             });
           } catch (sseError) {
             console.error('❌ Failed to create SSE connection:', sseError);
@@ -2141,28 +2205,43 @@
 
           this.eventSource.addEventListener('progress', (event) => {
             console.log('⚙️ [SSE] Received progress event');
+            console.log('⚙️ [SSE] Raw progress data:', event.data);
             try {
               const payload = JSON.parse(event.data);
               const content = payload.content || {};
-              
+              console.log('⚙️ [SSE] Progress content:', content);
+              console.log('⚙️ [SSE] Progress message:', content.data);
+
               // Find the processing message and update it
               // IMPORTANT: Only update if still processing AND not yet completed
-              const processingIndex = this.transcripts.findIndex(t => 
-                t.processing && 
-                !t.completed && 
-                !t.delivered_via_sse && 
+              const processingIndex = this.transcripts.findIndex(t =>
+                t.processing &&
+                !t.completed &&
+                !t.delivered_via_sse &&
                 t.user_id === 'zoom-ai'
               );
+              console.log('⚙️ [SSE] Processing message index:', processingIndex);
+              console.log('⚙️ [SSE] Total transcripts:', this.transcripts.length);
+
               if (processingIndex !== -1) {
                 const processingMessage = this.transcripts[processingIndex];
                 const userPrompt = processingMessage.userPrompt || '';
-                
+
+                console.log('⚙️ [SSE] Found processing message, updating with:', content.data);
+                console.log('⚙️ [SSE] User prompt:', userPrompt);
+
                 // Preserve the user prompt in the updated message
                 this.transcripts[processingIndex].data = `<div class="flex flex-col gap-1"><div class="text-xs text-gray-400 italic">"${userPrompt}"</div><div class="flex items-center gap-2"><div class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div><span class="text-gray-500">${content.data}</span></div></div>`;
                 this.saveTranscripts();
                 console.log('✅ [SSE] Updated progress message:', content.data);
               } else {
                 console.log('⏭️ [SSE] No active processing message found - progress event ignored (response may have already arrived)');
+                console.log('⏭️ [SSE] Current transcripts:', this.transcripts.slice(0, 3).map(t => ({
+                  user_id: t.user_id,
+                  processing: t.processing,
+                  completed: t.completed,
+                  delivered_via_sse: t.delivered_via_sse
+                })));
               }
             } catch (e) {
               console.error('❌ [SSE] Error processing progress:', e);
@@ -2230,6 +2309,17 @@
         handleNewTranscript(content) {
           console.log('🎯 [HANDLER] handleNewTranscript called');
           console.log('🎯 [HANDLER] Content:', content);
+
+          // Special logging for router decisions
+          if (content.user_id === 'zoom-ai-router') {
+            console.log('🔵 [ROUTER DECISION] Received router decision:', {
+              user_id: content.user_id,
+              user_name: content.user_name,
+              data: content.data,
+              micEnabled: this.micEnabled,
+              showRouterRejections: this.showRouterRejections
+            });
+          }
           
           // Apply spelling correction to live transcripts for display
           const correctedData = this.correctZoomSpelling(content.data || '');
@@ -2316,11 +2406,16 @@
             }
           }
 
-          // Check if mic is OFF and this is a user transcript (not AI response)
-          // Skip adding user transcripts when mic is disabled
-          if (!this.micEnabled && newTranscript.user_id !== 'zoom-ai' && newTranscript.user_id !== 'discovery-ai' && newTranscript.user_id !== 'system') {
+          // Check if mic is OFF and this is a user transcript (not AI response or router decision)
+          // Skip adding user transcripts when mic is disabled, but allow AI responses and router decisions
+          if (!this.micEnabled && newTranscript.user_id !== 'zoom-ai' && newTranscript.user_id !== 'discovery-ai' && newTranscript.user_id !== 'zoom-ai-router' && newTranscript.user_id !== 'system') {
             console.log('🔇 Mic OFF - Skipping incoming transcript from stream:', correctedData.slice(0, 50));
             return;
+          }
+
+          // Log if router decision passed the mic check
+          if (newTranscript.user_id === 'zoom-ai-router') {
+            console.log('✅ [ROUTER DECISION] Passed mic check, continuing to add to transcripts');
           }
 
           // Check for duplicate transcripts (exact match on data and user_id within 5 seconds)
@@ -2346,6 +2441,25 @@
           this.saveTranscripts();
           console.log('📝 [HANDLER] Transcripts saved to localStorage');
 
+          // Special handling for router decisions - they're purely informational
+          // Display/hide is controlled by CSS toggle, no AI trigger logic needed
+          if (newTranscript.user_id === 'zoom-ai-router') {
+            console.log('✅ [ROUTER DECISION] Successfully added to transcripts array and saved! (display controlled by CSS toggle)');
+            return; // Exit early - router decisions never trigger AI
+          }
+
+          // CRITICAL: Never trigger AI for AI-generated messages (check both user_id AND user_name)
+          const isAIMessage = newTranscript.user_id === 'zoom-ai' ||
+                             newTranscript.user_id === 'discovery-ai' ||
+                             newTranscript.user_id === 'system' ||
+                             newTranscript.user_name === 'Zoom AI Assistant' ||
+                             newTranscript.user_name === 'Discovery';
+
+          if (isAIMessage) {
+            console.log('🚫 [HANDLER] Blocked AI message from triggering:', newTranscript.user_name);
+            return;
+          }
+
           // Only trigger AI if this is a user message (not from Zoom AI) AND mic is enabled
           console.log('🎤 [HANDLER] Checking if should trigger AI:', {
             user_id: newTranscript.user_id,
@@ -2353,20 +2467,6 @@
             micEnabled: this.micEnabled,
             requireHeyZoom: this.requireHeyZoom
           });
-          
-          // CRITICAL: Never trigger AI for AI-generated messages (check both user_id AND user_name)
-          const isAIMessage = newTranscript.user_id === 'zoom-ai' ||
-                             newTranscript.user_id === 'discovery-ai' ||
-                             newTranscript.user_id === 'zoom-ai-router' ||
-                             newTranscript.user_id === 'system' ||
-                             newTranscript.user_name === 'Zoom AI Assistant' ||
-                             newTranscript.user_name === 'Discovery' ||
-                             newTranscript.user_name === 'Router Decision';
-          
-          if (isAIMessage) {
-            console.log('🚫 [HANDLER] Blocked AI message from triggering:', newTranscript.user_name);
-            return;
-          }
           
           if (this.micEnabled) {
             // If requireHeyZoom is disabled (AUTO mode), process all messages (with debouncing)
@@ -3243,6 +3343,67 @@
                 has_scratchpad: !!result.response_transcript?.scratchpad,
                 has_directives: !!result.response_transcript?.directives
               });
+
+              // Handle wait requests (router detected incomplete message)
+              if (result.shouldWait) {
+                const waitSeconds = result.waitSeconds || 2;
+                console.log(`⏳ Router requesting wait: ${waitSeconds}s - "${result.reasoning}"`);
+
+                // Remove the processing message (we're waiting, not processing yet)
+                const processingMessageIndex = this.transcripts.findIndex(t =>
+                  t.processing &&
+                  !t.completed &&
+                  t.originalTranscript &&
+                  (t.originalTranscript.data === transcript.original_data ||
+                   t.originalTranscript.data === transcript.data)
+                );
+
+                if (processingMessageIndex !== -1) {
+                  console.log('🗑️ Removing processing indicator (waiting for more speech)');
+                  this.transcripts.splice(processingMessageIndex, 1);
+                  this.saveTranscripts();
+                }
+
+                // Add current transcript back to pending queue if not already there
+                // This preserves the incomplete message for combination with future messages
+                const alreadyPending = this.pendingTranscripts.some(t =>
+                  t.data === transcript.data && t.timestamp === transcript.timestamp
+                );
+
+                if (!alreadyPending) {
+                  console.log('📥 Re-adding current transcript to pending queue');
+                  this.pendingTranscripts.push(transcript);
+                }
+
+                console.log(`   Pending transcripts queue size: ${this.pendingTranscripts.length}`);
+
+                // Re-schedule the trigger with the requested wait time (convert seconds to ms)
+                // This allows more transcripts to accumulate before retrying
+                console.log(`⏰ Re-scheduling trigger to fire in ${waitSeconds * 1000}ms`);
+                clearTimeout(this.triggerDebounceTimer);
+                this.triggerDebounceTimer = setTimeout(() => {
+                  if (this.pendingTranscripts.length > 0) {
+                    console.log(`⏰ Wait time elapsed, processing ${this.pendingTranscripts.length} transcript(s)`);
+
+                    // Combine all pending transcripts
+                    const combinedData = this.pendingTranscripts.map(t => t.data).join(' ');
+                    const combinedOriginalData = this.pendingTranscripts.map(t => t.original_data || t.data).join(' ');
+
+                    const combinedTranscript = {
+                      ...this.pendingTranscripts[0],
+                      data: combinedData,
+                      original_data: combinedOriginalData,
+                      combined: true,
+                      transcriptCount: this.pendingTranscripts.length
+                    };
+
+                    this.pendingTranscripts = [];
+                    this.handleZoomTrigger(combinedTranscript);
+                  }
+                }, waitSeconds * 1000);
+
+                return; // Exit early, waiting for more speech
+              }
 
               // Update scratchpad/directives if included in response
               if (result.response_transcript?.scratchpad) {

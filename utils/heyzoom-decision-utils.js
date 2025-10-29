@@ -140,8 +140,36 @@ export async function evaluateResponseNeed(groqClient, config) {
     };
   }
 
-  // Check cache/queue BUT skip cache check for planning/creative requests
+  // Check for incomplete sentences - if detected, ask frontend to wait longer
   const normalized = transcript.toLowerCase().replace(/hey zoom,?\s*/gi, '').trim();
+
+  // Detect incomplete thoughts that suggest more speech is coming
+  const incompletePatterns = [
+    // Action verbs without objects
+    /^(can you|could you|please|would you)\s*$/i,
+    /^(look up|search for|find|tell me about|show me)\s*$/i,
+    /^(what'?s?|where'?s?|when'?s?|who'?s?|how'?s?)\s*$/i,
+    // Ends with prepositions or conjunctions (strong signal of incomplete thought)
+    /\b(for|about|with|from|to|in|on|at|and|or|but|because)\s*$/i,
+    // Starts action but no completion
+    /^(can you|could you|please|would you)\s+(look|find|search|tell|show|get|create|make)\s*$/i,
+    // Question words without completion
+    /^(what|where|when|who|how|why)\s+(is|are|was|were|can|could|should|would|do|does|did)\s*$/i,
+    // Very short messages (likely cut off)
+    /^.{1,10}$/i,
+  ];
+
+  const seemsIncomplete = incompletePatterns.some(pattern => pattern.test(normalized));
+
+  if (seemsIncomplete) {
+    console.log('⏳ Incomplete sentence detected - requesting more wait time');
+    return {
+      shouldWait: true,
+      waitSeconds: 2.5, // Wait an additional 2.5 seconds for more speech
+      reasoning: 'Message appears incomplete - waiting for more speech',
+      confidence: 0.9
+    };
+  }
 
   // Planning/creative keywords that indicate a NEW type of request (not a repeat)
   const planningKeywords = [
@@ -218,8 +246,8 @@ export async function evaluateResponseNeed(groqClient, config) {
     };
   }
 
-  // Build context from chat history (increased from 10 to 15 for better continuity)
-  const recentHistory = chatHistory.slice(-15);
+  // Build context from chat history (increased from 10 to 30 for better continuity)
+  const recentHistory = chatHistory.slice(-30);
   const historyContext = recentHistory.length > 0
     ? recentHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')
     : 'No prior conversation';

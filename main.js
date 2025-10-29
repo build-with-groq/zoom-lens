@@ -84,6 +84,9 @@ import {
 
 // Helper function to broadcast progress updates to SSE clients
 function broadcastProgress(message, type = 'progress') {
+  console.log(`📡 [PROGRESS] Broadcasting: "${message}"`);
+  console.log(`📡 [PROGRESS] Connected SSE clients: ${sseClients.size}`);
+
   const progressTranscript = {
     user_id: 'zoom-ai',
     user_name: 'Zoom AI Assistant',
@@ -92,18 +95,25 @@ function broadcastProgress(message, type = 'progress') {
     processing: true,
     type: type
   };
-  
+
   // Broadcast to SSE clients
+  let successCount = 0;
+  let failCount = 0;
   for (const client of sseClients) {
     try {
       client.send('event: progress\n' + 'data: ' + JSON.stringify({
         content: progressTranscript
       }) + '\n\n');
+      successCount++;
+      console.log(`   ✅ Sent to client ${successCount}`);
     } catch (error) {
-      console.error('Error broadcasting progress:', error);
+      failCount++;
+      console.error(`   ❌ Error broadcasting progress to client ${failCount}:`, error);
     }
   }
-  
+
+  console.log(`📡 [PROGRESS] Broadcast complete: ${successCount} successful, ${failCount} failed`);
+
   // Store for polling clients
   addToRecentTranscripts(progressTranscript);
 
@@ -984,7 +994,7 @@ app.post('/api/groq-inference', async (c) => {
         msg.user_id !== 'zoom-ai-router' &&  // Exclude router decision messages
         msg.data
       )
-      .slice(-10); // Keep last 10 messages for context
+      .slice(-50); // Keep last 50 messages for context (increased from 10 for better continuity)
 
     // Pass request headers for bearer token passthrough
     const result = await performGroqInference(
@@ -1119,7 +1129,7 @@ app.post('/api/trigger-groq', async (c) => {
         msg.user_id !== 'zoom-ai-router' &&  // Exclude router decision messages
         msg.data
       )
-      .slice(-10); // Keep last 10 messages for context
+      .slice(-50); // Keep last 50 messages for context (increased from 10 for better continuity)
 
     console.log(`   📋 Filtered chat history: ${filteredChatHistory.length} messages`);
     console.log(`   👤 User: ${user_name || 'Unknown'}`);
@@ -1149,6 +1159,7 @@ app.post('/api/trigger-groq', async (c) => {
     });
 
     console.log(`\n📋 Response Decision:`);
+    console.log(`   Should Wait: ${responseDecision.shouldWait ? `YES ⏳ (${responseDecision.waitSeconds}s)` : 'NO'}`);
     console.log(`   Should Respond: ${responseDecision.shouldRespond ? 'YES ✅' : 'NO ⏭️'}`);
     console.log(`   Reasoning: ${responseDecision.reasoning}`);
     console.log(`   Confidence: ${responseDecision.confidence}`);
@@ -1156,6 +1167,18 @@ app.post('/api/trigger-groq', async (c) => {
     console.log(`   Queued: ${responseDecision.queued}`);
     console.log(`   Bypassed Decision Agent: ${responseDecision.bypassedDecisionAgent || false}`);
     console.log(`${'='.repeat(80)}\n`);
+
+    // If decision is to WAIT (incomplete sentence), return wait instruction
+    if (responseDecision.shouldWait) {
+      console.log(`⏳ Router requesting wait: ${responseDecision.waitSeconds}s (incomplete message detected)`);
+      return c.json({
+        success: true,
+        shouldWait: true,
+        waitSeconds: responseDecision.waitSeconds,
+        reasoning: responseDecision.reasoning,
+        message: responseDecision.reasoning
+      });
+    }
 
     // Add decision to action feed
     const actionFeedMessage = actionFeedManager.addRouterDecision({
@@ -1624,7 +1647,7 @@ app.post('/api/discovery-analysis', async (c) => {
           discoveryQuery,
           'Discovery Mode',
           'discovery_analysis',
-          transcripts.slice(-10),
+          transcripts.slice(-30), // Increased from 10 to 30 for better context
           true, // Skip trigger detection
           null, // No progress callback
           null, // No request headers
@@ -1637,8 +1660,8 @@ app.post('/api/discovery-analysis', async (c) => {
 
           const reflectionPrompt = `You are evaluating whether research results add value to a conversation.
 
-Conversation context (last 10 messages):
-${transcripts.slice(-10).map(t => `${t.user_name || 'User'}: ${t.data}`).join('\n')}
+Conversation context (last 30 messages):
+${transcripts.slice(-30).map(t => `${t.user_name || 'User'}: ${t.data}`).join('\n')}
 
 Research topic: "${insight.topic}"
 Research result:

@@ -119,10 +119,10 @@ CURRENT QUESTION TO ANALYZE: "${question}"
 USER: ${userName}
 
 RECENT CONVERSATION CONTEXT (for understanding references and follow-up questions):
-${recentHistory.slice(-20).map((msg, idx, arr) => {
+${recentHistory.slice(-30).map((msg, idx, arr) => {
   const role = msg.role === 'assistant' ? 'Assistant' : 'User';
-  // Last 5 messages: no truncation
-  if (idx >= arr.length - 5) {
+  // Last 10 messages: no truncation
+  if (idx >= arr.length - 10) {
     return `${role}: ${msg.content}`;
   }
   // Older messages: truncate to 600 chars
@@ -869,9 +869,9 @@ export async function performWebSearch(query, context = {}) {
     
     if (chatHistory && chatHistory.length > 0) {
       // Adjust context amount based on strategy:
-      // - 'minimal': Last 3-5 messages only (for command-style queries)
-      // - 'full': Last 20 messages (for conversational/research queries)
-      const contextLimit = contextStrategy === 'minimal' ? 5 : 20;
+      // - 'minimal': Last 5 messages only (for command-style queries)
+      // - 'full': Last 40 messages (for conversational/research queries) - increased for better context retention
+      const contextLimit = contextStrategy === 'minimal' ? 5 : 40;
       
       const recentHistory = chatHistory
         .slice(0, contextLimit)
@@ -995,7 +995,7 @@ Have a natural conversation - respond directly to what they're saying, reference
     if (chatHistory && chatHistory.length > 0) {
       // Direct answer typically needs full context since it's used for conversational queries
       // But respect minimal strategy if explicitly set (rare case)
-      const contextLimit = contextStrategy === 'minimal' ? 5 : 30;
+      const contextLimit = contextStrategy === 'minimal' ? 5 : 50; // Increased from 30 to 50 for better context
       
       const recentHistory = chatHistory
         .slice(0, contextLimit)
