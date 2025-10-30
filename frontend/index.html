@@ -446,7 +446,7 @@
             </div>
           </div>
           
-          <div x-show="!transcripts.some(t => t.user_id === 'zoom-ai' || t.user_id === 'system')" class="p-8 text-center text-text-muted">
+          <div x-show="!transcripts.some(t => t.user_id === 'zoom-ai' || t.user_id === 'system')" class="max-w-4xl mx-2 md:mx-auto px-8 py-8 text-center text-text-muted border border-gray-300 rounded-xl">
             <div class="text-4xl mb-3 opacity-50">🤖</div>
             <p class="font-medium text-gray-700">Zoom Lens is ready</p>
             <p class="text-xs mt-1">Start a Zoom meeting to begin. Say "Hey Zoom" to activate the assistant.</p>
@@ -1006,6 +1006,19 @@
                 </div>
               </template>
           </div>
+        </div>
+        
+        <!-- Footer with Logos -->
+        <div class="max-w-4xl mx-2 md:mx-auto mt-8 mb-6 flex items-center justify-center gap-4">
+          <a href="https://groq.com" target="_blank" rel="noopener noreferrer" class="hover:opacity-100 transition-opacity">
+            <img src="/public/groq-logo.svg" alt="Groq" class="w-[80px] h-auto object-contain opacity-70" />
+          </a>
+          <a href="https://zoom.us" target="_blank" rel="noopener noreferrer" class="hover:opacity-100 transition-opacity">
+            <img src="/public/Zoom-Logo-500x281.png" alt="Zoom" class="w-[80px] pl-3 h-auto object-contain opacity-70" />
+          </a>
+          <a href="https://equinix.com" target="_blank" rel="noopener noreferrer" class="hover:opacity-100 transition-opacity">
+            <img src="/public/Equinix-Emblem-500x281.png" alt="Equinix" class="w-[80px] h-auto object-contain opacity-70" />
+          </a>
         </div>
       </div>
     </div>

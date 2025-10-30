@@ -432,6 +432,44 @@ app.get("/@alpinejs@3.12.3.cdn.min.js", async (c) => {
   }
 });
 
+// Serve public folder images
+app.get("/public/:filename", async (c) => {
+  try {
+    const filename = c.req.param("filename");
+    const filePath = `./frontend/public/${filename}`;
+    
+    // Only allow specific image files for security
+    const allowedFiles = [
+      'groq-logo.svg',
+      'Zoom-Logo-500x281.png',
+      'Equinix-Emblem-500x281.png',
+      'Equinix-Logo-500x281.png'
+    ];
+    
+    if (!allowedFiles.includes(filename)) {
+      return c.text('File not allowed', 403);
+    }
+    
+    const file = await Deno.readFile(filePath);
+    const contentType = filename.endsWith('.svg') 
+      ? 'image/svg+xml' 
+      : filename.endsWith('.png')
+      ? 'image/png'
+      : 'application/octet-stream';
+    
+    return new Response(file, {
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
+        'Access-Control-Allow-Origin': '*',
+      }
+    });
+  } catch (error) {
+    console.error('Error reading public file:', error);
+    return c.text('File not found', 404);
+  }
+});
+
 // Serve the minimal UI at root
 app.get("/", async (c) => {
   try {
