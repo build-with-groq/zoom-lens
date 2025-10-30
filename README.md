@@ -4,67 +4,37 @@
 
 ## Overview
 
-Zoom Lens V2 is a refactored version of the original Zoom Lens AI-powered meeting assistant. The primary goal of this refactor is to create a modular architecture that allows for easy experimentation with different agent implementations while sharing common utilities and infrastructure.
+Zoom Lens V2 is an AI-powered meeting assistant that integrates with Zoom RTMS to provide intelligent, context-aware assistance during meetings. Built with a modular architecture, it enables easy experimentation with different agent implementations while sharing common utilities and infrastructure.
 
-## Key Improvements
+## Key Features
 
-### 1. **Modular Architecture**
-- Core utilities extracted into reusable `/utils` directory
+**MCP Integration & Tool Use** - The core capability that sets Zoom Lens apart:
+- **Model Context Protocol (MCP) Support**: Full integration with MCP servers for connecting to external tools and services
+- **Salesforce Integration**: Built-in Salesforce MCP connector with OAuth authentication, supporting 30+ CRM operations (leads, contacts, accounts, notes, SOQL queries)
+- **Custom MCP Extensions**: Easy framework to add your own MCP servers - simply register new tools in the unified tool registry
+- **Intelligent Tool Routing**: AI-powered router selects appropriate tools and functions based on user intent
+- **Multi-Tool Requests**: Handle complex queries requiring multiple tools in parallel
+- **Built-in Tools**: Weather, web search (Groq Compound), Hugging Face models, and direct answers
+
+**Modular Architecture**:
+- Core utilities organized in reusable `/utils` directory
 - Agent-specific code isolated in `/experiments/agent-{n}` directories
-- Clear separation between infrastructure and agent logic
-
-### 2. **Reusable Utilities**
+- Experiment-driven development - each agent variant lives in its own directory for easy comparison
 - **Trigger Detection**: Configurable keyword/greeting detection system
 - **Deduplication**: Request deduplication with time-window tracking
-- **SSE Broadcasting**: Server-sent events for real-time updates
 - **Context Strategy**: Smart chat history management
 - **Tool Registry**: Framework for managing MCP and built-in tools
-- **WebSocket Core**: Generic WebSocket connection management
-- **Auth Core**: Multi-strategy authentication handling
 
-### 3. **Experiment-Driven Development**
-- Each agent variant lives in its own experiment directory
-- Easy to compare different approaches side-by-side
-- Agent-1 maintains 100% compatibility with v1 functionality
-- Future agents (agent-2, agent-3) can be added without affecting existing ones
 
-## Directory Structure
+## Agent Architecture
 
-```
-zoom-lens-v2/
-├── utils/                              # Shared utility modules
-│   ├── trigger-detection-utils.js      # Configurable trigger detection
-│   ├── deduplication-utils.js          # Request deduplication
-│   ├── sse-broadcast-utils.js          # SSE client management
-│   ├── context-strategy-utils.js       # Chat history context management
-│   ├── tool-registry-core.js           # Tool registry framework
-│   ├── websocket-core-utils.js         # WebSocket helpers
-│   └── auth-core-utils.js              # Authentication utilities
-│
-├── experiments/                        # Agent experiments
-│   ├── agent-1/                        # Agent-1: Original Zoom Lens (always-on)
-│   │   ├── agent-1-config.js           # Agent configuration
-│   │   └── agent-1-inference.js        # AI inference logic
-│   └── agent-2/                        # Agent-2: Poke-inspired (thoughtful filtering)
-│       ├── agent-2-config.js           # Interaction + Execution agent config
-│       ├── README.md                   # Architecture documentation
-│       ├── QUICK_START.md              # 5-minute setup guide
-│       └── INTEGRATION_EXAMPLE.js      # Usage examples
-│
-├── main.js                             # Main application entry point
-├── config.js                           # Environment configuration
-├── auth-utils.js                       # Auth implementation
-├── crypto-utils.js                     # Cryptographic utilities
-├── styles.js                           # UI styling
-├── websocket-utils.js                  # Zoom RTMS WebSocket handlers
-├── tool-registry-unified.js            # Tool definitions
-├── salesforce-focus.js                 # Salesforce context tracking
-├── salesforce-routes.js                # Salesforce OAuth routes
-├── frontend/                           # Frontend UI
-│   └── index.html                      # Live transcript viewer
-├── deno.json                           # Deno configuration
-└── README.md                           # This file
-```
+Zoom Lens V2 uses an AI-powered intelligent routing system that analyzes user queries and automatically selects the appropriate tools and MCP functions. The `intelligentRouter` function uses Groq's LLM models to understand user intent, extract parameters from natural language, and route requests to the right tools (MCP servers or built-in handlers). The system supports parallel tool execution for complex queries and maintains chat history for context-aware responses.
+
+- **Intelligent Router**: AI-powered tool selection with parameter extraction from natural language queries
+- **Race-Based Retry**: Fires initial request and retry in parallel, using whichever completes first for reliability
+- **Unified Tool Registry**: Central registry managing MCP tools (Salesforce, Hugging Face) and built-in tools (Weather, web search)
+
+
 
 ## Running the Application
 
@@ -76,7 +46,7 @@ export ZOOM_SECRET_TOKEN="your_zoom_secret_token"
 export GROQ_API_KEY="your_groq_api_key"
 
 # Run locally
-deno run --allow-net --allow-env --allow-read main.js
+deno task serve
 
 # Deploy to Deno Deploy
 deployctl deploy --project=your-project main.js
@@ -84,43 +54,40 @@ deployctl deploy --project=your-project main.js
 
 ## Available Agents
 
-### Agent-1: The Always-On Assistant
-- **Philosophy**: "Always ready to help"
-- **Architecture**: Single agent, direct responses
-- **Best For**: Active Q&A sessions, testing, development
-- **Characteristics**: Responds to everything, predictable, no filtering
-
-### Agent-2: The Thoughtful Assistant ⭐ NEW
+### Agent-1: The Thoughtful Assistant
 - **Philosophy**: "Better to stay silent than be annoying"
 - **Architecture**: Poke-inspired orchestration (Interaction Agent + Execution Agent)
-- **Best For**: Background assistance, discovery mode, meeting contexts
-- **Characteristics**: Filters outputs, stays silent when appropriate, rate-limited discoveries
+- **Best For**: Background assistance, discovery mode, meeting contexts, active Q&A sessions
+- **Characteristics**: Filters outputs, stays silent when appropriate, rate-limited discoveries, intelligent routing
 
 **Key Innovation**: Separates eager execution from thoughtful presentation
 - **Interaction Agent** acts as gatekeeper, decides what reaches user
 - **Execution Agent** can be thorough without being annoying
 - Inspired by [Poke's multi-agent architecture](https://shlokkhemani.com/writing/openpoke)
 
-📖 **Learn More**:
-- [Agent-2 README](./experiments/agent-2/README.md) - Full architecture explanation
-- [Agent-2 Quick Start](./experiments/agent-2/QUICK_START.md) - 5-minute setup
-- [Agent Comparison](./AGENT_COMPARISON.md) - Detailed comparison of agent-1 vs agent-2
+**Features**:
+- Intelligent tool routing and selection
+- Context-aware response filtering
+- Multi-tool request handling
+- Scratchpad for meeting notes
+- Discovery mode support
+- Progress broadcasting via SSE
 
-### Choosing an Agent
 
-| Scenario | Recommended Agent |
-|----------|-------------------|
-| Active Q&A session | Agent-1 |
-| Background meeting assistant | Agent-2 ✅ |
-| Discovery mode enabled | Agent-2 ✅ |
-| Testing/development | Agent-1 |
-| User prefers quiet assistance | Agent-2 ✅ |
 
-## Benefits
 
-- **Experimentation**: Easy to try new approaches
-- **Maintainability**: Clear separation of concerns
-- **Reusability**: Common utilities shared across agents
-- **Scalability**: Add new agents without modifying core infrastructure
+## Contributing
 
-See full documentation in README for detailed utility usage examples.
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## Disclaimer
+
+This is a demo project built with Zoom RTMS, and powered by Groq's fast inference and remote MCP server connectors. It's also mostly been vibe coded so use with caution!
+
+## License
+
+MIT License - see LICENSE file for details
