@@ -12,12 +12,12 @@ import {
   MODEL_SYNTHESIS,
   ROUTER_RETRY_DELAY_MS
 } from "../../config.js";
-import { getAvailableTools } from "../../tool-registry-unified.js";
-import { getSalesforceSessionId } from "../../auth-utils.js";
-import { processToolAuth } from "../../auth-utils.js";
-import { getSalesforceFocus, getFocusGoalPrompt } from "../../salesforce-focus.js";
-import { getDirectives, getDirectivesPrompt } from "../../directives.js";
-import { getScratchPad, getScratchPadPrompt, setScratchPad } from "../../scratchpad.js";
+import { getAvailableTools } from "../../src/tool-registry-unified.js";
+import { getSalesforceSessionId } from "../../src/utils/auth-utils.js";
+import { processToolAuth } from "../../src/utils/auth-utils.js";
+import { getSalesforceFocus, getFocusGoalPrompt } from "../../src/salesforce-focus.js";
+import { getDirectives, getDirectivesPrompt } from "../../src/directives.js";
+import { getScratchPad, getScratchPadPrompt, setScratchPad } from "../../src/utils/scratchpad.js";
 
 // Enhanced AI-powered router that decides which tools and specific MCP functions to use
 export async function intelligentRouter(question, userName, context = {}, chatHistory = []) {
@@ -272,14 +272,14 @@ Response: {
   "confidence": 0.9
 }
 
-Question: "what's the weather in San Francisco"
+Question: "what's the weather in CITY_NAME"
 Response: {
   "tools": [
     {
       "tool_id": "weather",
       "functions": [],
       "params": {
-        "location": "San Francisco"
+        "location": "CITY_NAME"
       }
     }
   ],
@@ -811,6 +811,18 @@ export async function getWeather(location) {
       day: 'numeric' 
     });
 
+    // If location looks like a full question/sentence, use it directly
+    // Otherwise, format it as a question
+    const isFullQuestion = location.includes('?') || 
+                          location.toLowerCase().includes('rain') ||
+                          location.toLowerCase().includes('weather') ||
+                          location.toLowerCase().includes('forecast') ||
+                          location.length > 50;
+    
+    const userMessage = isFullQuestion 
+      ? `${location} Return ONLY a single sentence with temperature, conditions, and any relevant details. Keep it brief and conversational.`
+      : `What's the current weather in ${location}? Return ONLY a single sentence with temperature, conditions, and any relevant details. Keep it brief and conversational.`;
+
     const response = await groqClient.chat.completions.create({
       model: "groq/compound-mini",
       messages: [
@@ -820,7 +832,7 @@ export async function getWeather(location) {
         },
         {
           role: "user",
-          content: `What's the current weather in ${location}? Return ONLY a single sentence with temperature, conditions, and any relevant details. Keep it brief and conversational.`,
+          content: userMessage,
         },
       ],
     });
@@ -1151,7 +1163,7 @@ export async function performGroqInference(transcript, userName, context = 'gene
     // Broadcast routing decision to frontend
     if (progressCallback) {
       const toolsList = routingDecision.tools.map(t => t.replace('_', ' ')).join(', ');
-      progressCallback(`Analyzing... Will use: ${toolsList}`);
+      progressCallback(`Analyzing... Using: ${toolsList}`);
     }
     
     // Log detailed tool information including functions and params
@@ -1734,17 +1746,35 @@ For Salesforce: Credentials are in the user message. Call functions directly (sf
           if (toolConfig.handler) {
             // Special handling for weather tool to extract location
             if (toolName === 'weather') {
-              const locationMatch = transcript.match(/(?:weather in|weather for)\s+([A-Za-z\s,]+)/i);
-              const location = locationMatch ? locationMatch[1].trim() : 'San Francisco';
+              // First try to use router's extracted location param
+              const toolDetail = routingDecision.toolDetails?.find(t => t.tool_id === 'weather');
+              let location = toolDetail?.params?.location || '';
+              
+              // If router didn't extract location, try to extract from transcript
+              if (!location) {
+                // More flexible patterns: "rain in", "weather in", "forecast for", "temperature in", etc.
+                const locationMatch = transcript.match(/(?:rain|weather|forecast|temperature|climate|snow|sunny|cloudy|windy|humidity)\s+(?:in|for|at)\s+([A-Za-z\s,]+?)(?:\s+(?:today|tomorrow|this\s+week))?/i);
+                if (locationMatch) {
+                  location = locationMatch[1].trim();
+                } else {
+                  // Last resort: pass full transcript and let handler extract
+                  location = transcript;
+                }
+              }
+              
+              console.log(`🌤️ Weather tool: Using location "${location}" (from router: ${!!toolDetail?.params?.location}, from transcript: ${!toolDetail?.params?.location})`);
               result = await toolConfig.handler(location);
               result.location = location;
             }
             // Special handling for scratchpad/directives - use router's extracted content
             else if (toolName === 'update_scratchpad' || toolName === 'update_directives') {
-              const newContent = tool.params?.newContent || transcript;
+              // Find the matching toolDetail entry from router to get extracted params
+              const toolDetail = routingDecision.toolDetails?.find(t => t.tool_id === toolName);
+              const newContent = toolDetail?.params?.newContent || transcript;
               console.log(`📝 Calling ${toolName} with content from router:`, {
                 content_length: newContent.length,
-                content_preview: newContent.substring(0, 100)
+                content_preview: newContent.substring(0, 100),
+                has_router_params: !!toolDetail?.params?.newContent
               });
               result = await toolConfig.handler(newContent, 'default');
             }

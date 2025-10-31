@@ -23,7 +23,7 @@ import { Hono } from "https://deno.land/x/hono@v3.11.7/mod.ts";
 // } from "./experiments/agent-1/agent-1-inference.js";
 
 // NEW (via router):
-import { getActiveAgent, getAgentInfo, testBothAgents } from './agent-router.js';
+import { getActiveAgent, getAgentInfo, testBothAgents } from './src/agent-router.js';
 
 // Load active agent at startup
 console.log('🚀 Loading active agent...');

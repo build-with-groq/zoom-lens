@@ -6,14 +6,14 @@
  * Quick test to compare agent-1 vs agent-2 without modifying main.js
  *
  * Usage:
- *   deno run --allow-net --allow-env --allow-read test-agent-comparison.js
+ *   deno run --allow-net --allow-env --allow-read test/test-agent-comparison.js
  *
  * Or make it executable:
- *   chmod +x test-agent-comparison.js
- *   ./test-agent-comparison.js
+ *   chmod +x test/test-agent-comparison.js
+ *   ./test/test-agent-comparison.js
  */
 
-import { testBothAgents, switchAgent, getAgentInfo, listAvailableAgents } from './agent-router.js';
+import { testBothAgents, switchAgent, getAgentInfo, listAvailableAgents } from '../src/agent-router.js';
 
 console.log(`\n${'█'.repeat(80)}`);
 console.log(`🧪 AGENT COMPARISON TEST SUITE`);

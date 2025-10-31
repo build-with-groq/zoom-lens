@@ -2,10 +2,10 @@
  * Test script for feedback loop prevention
  *
  * Tests that AI-generated messages are correctly identified and blocked
- * Usage: deno run test-feedback-prevention.js
+ * Usage: deno run test/test-feedback-prevention.js
  */
 
-import { isAIGeneratedMessage, AI_IDENTIFIERS } from "./config.js";
+import { isAIGeneratedMessage, AI_IDENTIFIERS } from "../config.js";
 
 console.log("🧪 Testing Feedback Loop Prevention\n");
 

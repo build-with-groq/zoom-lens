@@ -7,8 +7,8 @@ import {
   getSalesforceSessionId,
   setSalesforceCredentials,
   clearSalesforceCredentials
-} from "./auth-utils.js";
-import { SALESFORCE_MCP_URL } from "./config.js";
+} from "./utils/auth-utils.js";
+import { SALESFORCE_MCP_URL } from "../config.js";
 
 // Get Salesforce credentials status
 export function getSalesforceStatus(c) {

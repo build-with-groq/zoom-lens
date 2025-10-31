@@ -161,14 +161,14 @@ Response: {
   "confidence": 0.9
 }
 
-Question: "what's the weather in San Francisco"
+Question: "what's the weather in CITY_NAME"
 Response: {
   "tools": [
     {
       "tool_id": "weather",
       "functions": [],
       "params": {
-        "location": "San Francisco"
+        "location": "CITY_NAME"
       }
     }
   ],

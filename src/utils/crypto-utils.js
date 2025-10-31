@@ -3,7 +3,7 @@
  * Helper functions for HMAC signatures and encryption
  */
 
-import { ZOOM_CLIENT_ID, ZOOM_CLIENT_SECRET } from "./config.js";
+import { ZOOM_CLIENT_ID, ZOOM_CLIENT_SECRET } from "../../config.js";
 
 // Deno crypto helper for HMAC
 export async function createHmacSha256(key, data) {

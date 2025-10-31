@@ -35,7 +35,7 @@
  */
 
 import { Hono } from "https://deno.land/x/hono@v3.11.7/mod.ts";
-import { getTailwindConfig, getStyles } from "./styles.js";
+import { getTailwindConfig, getStyles } from "./src/styles.js";
 import {
   ZOOM_CLIENT_ID,
   ZOOM_CLIENT_SECRET,
@@ -56,11 +56,11 @@ import {
   setSalesforceCredentials,
   clearSalesforceCredentials,
   processToolAuth
-} from "./auth-utils.js";
+} from "./src/utils/auth-utils.js";
 import {
   createHmacSha256,
   generateSignature
-} from "./crypto-utils.js";
+} from "./src/utils/crypto-utils.js";
 import {
   activeConnections,
   sseClients,
@@ -69,18 +69,19 @@ import {
   addToRecentTranscripts,
   getRecentTranscripts,
   connectToSignalingWebSocket,
-  connectToMediaWebSocket
-} from "./websocket-utils.js";
+  connectToMediaWebSocket,
+  setMicStateMap
+} from "./src/utils/websocket-utils.js";
 import {
   DiscoveryManager,
   evaluateDiscoveryNeed,
   formatDiscoverySummary
-} from "./utils/discovery-cache-utils.js";
+} from "./src/utils/discovery-cache-utils.js";
 import {
   evaluateResponseNeed,
   ActionFeedManager,
   createActionFeedBroadcast
-} from "./utils/heyzoom-decision-utils.js";
+} from "./src/utils/heyzoom-decision-utils.js";
 
 // Helper function to broadcast progress updates to SSE clients
 function broadcastProgress(message, type = 'progress') {
@@ -158,31 +159,31 @@ import {
   getToolsByNamespace,
   getRoutingInfo,
   setBuiltinHandlers
-} from "./tool-registry-unified.js";
+} from "./src/tool-registry-unified.js";
 import {
   getSalesforceStatus,
   getSalesforceOAuthUrl,
   handleSalesforceOAuthCallback,
   setSalesforceCredentialsRoute,
   clearSalesforceCredentialsRoute
-} from "./salesforce-routes.js";
+} from "./src/salesforce-routes.js";
 import {
   setSalesforceFocus,
   getSalesforceFocus,
   clearSalesforceFocus,
   parseFocusGoal,
   suggestFocusGoals
-} from "./salesforce-focus.js";
+} from "./src/salesforce-focus.js";
 import {
   setDirectives,
   getDirectives,
   clearDirectives
-} from "./directives.js";
+} from "./src/directives.js";
 import {
   setScratchPad,
   getScratchPad,
   clearScratchPad
-} from "./scratchpad.js";
+} from "./src/utils/scratchpad.js";
 // Import AI inference functions from agent-1 experiment
 import {
   intelligentRouter,
@@ -300,6 +301,14 @@ const actionFeedManager = new ActionFeedManager({
   enableLogging: true,
   maxMessages: 100
 });
+
+// Mic state tracking - stores whether mic is enabled for voice processing
+// Key: user_id or 'global' for all users
+const micStateMap = new Map();
+micStateMap.set('global', true); // Default: mic is enabled
+
+// Inject micStateMap into websocket-utils so it can check mic state for voice transcripts
+setMicStateMap(micStateMap);
 
 // Security headers middleware for Zoom Apps marketplace
 function addSecurityHeaders(c, next) {
@@ -493,6 +502,15 @@ app.get("/", async (c) => {
 // Crypto functions are now imported from crypto-utils.js
 
 
+// Health check endpoint for webhook readiness
+app.get(WEBHOOK_PATH, (c) => {
+  return c.json({ 
+    status: 'ready',
+    message: 'Webhook endpoint is active and ready to receive events',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // RTMS Webhook endpoint
 app.post(WEBHOOK_PATH, async (c) => {
   try {
@@ -542,6 +560,7 @@ app.post(WEBHOOK_PATH, async (c) => {
 app.get('/events', (c) => {
   console.log(`🔌 [SSE-ENDPOINT] New SSE client connecting`);
   let clientRef = null;
+  let keepaliveInterval = null;
   const stream = new ReadableStream({
     start(controller) {
       const encoder = new TextEncoder();
@@ -552,8 +571,34 @@ app.get('/events', (c) => {
       console.log(`✅ [SSE-ENDPOINT] Client added, total clients: ${sseClients.size}`);
       clientRef.send(': connected\n\n');
       console.log(`📤 [SSE-ENDPOINT] Sent connection confirmation`);
+      
+      // CRITICAL: Send keepalive comments every 30 seconds to prevent timeout
+      // Deno Deploy and most cloud platforms timeout idle connections after ~10 minutes
+      // This ensures the SSE connection stays alive even during silence
+      keepaliveInterval = setInterval(() => {
+        try {
+          clientRef.send(': keepalive\n\n');
+          console.log(`💓 [SSE-KEEPALIVE] Sent heartbeat to keep connection alive`);
+        } catch (error) {
+          console.error(`❌ [SSE-KEEPALIVE] Failed to send heartbeat:`, error);
+          // If send fails, the connection is likely dead - cleanup will happen in cancel()
+          if (keepaliveInterval) {
+            clearInterval(keepaliveInterval);
+            keepaliveInterval = null;
+          }
+        }
+      }, 30000); // 30 seconds
+      
+      console.log(`💓 [SSE-KEEPALIVE] Started keepalive timer (30s interval)`);
     },
     cancel() {
+      // Clear keepalive interval when connection closes
+      if (keepaliveInterval) {
+        clearInterval(keepaliveInterval);
+        keepaliveInterval = null;
+        console.log(`💓 [SSE-KEEPALIVE] Stopped keepalive timer`);
+      }
+      
       if (clientRef) {
         sseClients.delete(clientRef);
         console.log(`🔌 [SSE-ENDPOINT] Client disconnected, remaining clients: ${sseClients.size}`);
@@ -708,6 +753,74 @@ app.post('/api/response/clear-cache', (c) => {
   return c.json({
     success: true,
     message: 'Response cache and queue cleared',
+    timestamp: Date.now()
+  });
+});
+
+// Clear ALL Caches API - Clears discovery, response, and action feed caches
+app.post('/api/clear-all-caches', (c) => {
+  console.log('🗑️ Clearing all server-side caches...');
+  
+  // Clear discovery cache
+  discoveryManager.clear();
+  console.log('✅ Discovery cache cleared');
+  
+  // Clear response cache
+  responseManager.clear();
+  console.log('✅ Response cache cleared');
+  
+  // Clear action feed
+  actionFeedManager.clear();
+  console.log('✅ Action feed cleared');
+
+  return c.json({
+    success: true,
+    message: 'All server-side caches cleared (discovery, response, action feed)',
+    timestamp: Date.now()
+  });
+});
+
+// Mic State API - Allows frontend to update mic state for voice processing control
+app.post('/api/mic-state', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { enabled, user_id } = body;
+    
+    // Use user_id if provided, otherwise use 'global'
+    const key = user_id || 'global';
+    
+    const previousState = micStateMap.get(key);
+    micStateMap.set(key, enabled === true);
+    
+    console.log(`🎤 Mic state updated: ${key}`);
+    console.log(`   Previous: ${previousState === true ? 'ENABLED ✅' : previousState === false ? 'DISABLED 🔇' : 'UNDEFINED (default: enabled)'}`);
+    console.log(`   New: ${enabled ? 'ENABLED ✅' : 'DISABLED 🔇'}`);
+    console.log(`   Voice transcripts will ${enabled ? 'BE PROCESSED normally' : 'BE BLOCKED at websocket source'}`);
+    
+    return c.json({
+      success: true,
+      mic_enabled: enabled,
+      user_id: key,
+      previous_state: previousState,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error('❌ Error updating mic state:', error);
+    return c.json({
+      success: false,
+      error: error.message
+    }, 500);
+  }
+});
+
+// Get Mic State API
+app.get('/api/mic-state', (c) => {
+  const user_id = c.req.query('user_id') || 'global';
+  const enabled = micStateMap.get(user_id) ?? true; // Default to enabled
+  
+  return c.json({
+    mic_enabled: enabled,
+    user_id: user_id,
     timestamp: Date.now()
   });
 });
@@ -1005,7 +1118,17 @@ setBuiltinHandlers({
 app.post('/api/groq-inference', async (c) => {
   try {
     const body = await c.req.json();
-    const { transcript, user_name, context, chat_history, salesforce_credentials } = body;
+    const { 
+      transcript, 
+      user_name, 
+      context, 
+      chat_history, 
+      salesforce_credentials,
+      user_id,
+      timestamp,
+      hey_zoom_enabled = false,  // Default to false (use decision agent)
+      hey_zoom_strategy = 'reluctant'  // Strategy for Hey Zoom responses
+    } = body;
 
     // If Salesforce credentials are provided in the request, temporarily store them
     if (salesforce_credentials && salesforce_credentials.access_token && salesforce_credentials.instance_url) {
@@ -1030,18 +1153,102 @@ app.post('/api/groq-inference', async (c) => {
       .filter(msg =>
         msg.user_id !== 'system' &&
         msg.user_id !== 'zoom-ai-router' &&  // Exclude router decision messages
-        msg.data
+        !msg.processing &&  // CRITICAL: Exclude processing/spinner messages (incomplete responses)
+        msg.data &&
+        !msg.data.includes('Fetching response')  // Extra safety: exclude spinner HTML
       )
       .slice(-50); // Keep last 50 messages for context (increased from 10 for better continuity)
 
+    // Evaluate whether to respond using decision agent (same as /api/trigger-groq)
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`🤔 EVALUATING RESPONSE NEED (/api/groq-inference)`);
+    console.log(`${'='.repeat(80)}\n`);
+
+    const chatHistoryForDecision = filteredChatHistory.map(msg => ({
+      role: msg.user_id === 'zoom-ai' ? 'assistant' : 'user',
+      content: `${msg.user_name || 'User'}: ${msg.data}`
+    }));
+
+    const responseDecision = await evaluateResponseNeed(groqClient, {
+      transcript,
+      chatHistory: chatHistoryForDecision,
+      responseManager,
+      heyZoomEnabled: hey_zoom_enabled,
+      strategy: hey_zoom_strategy,
+      model: MODEL_DISCOVERY
+    });
+
+    console.log(`\n📋 Response Decision:`);
+    console.log(`   Should Wait: ${responseDecision.shouldWait ? `YES ⏳ (${responseDecision.waitSeconds}s)` : 'NO'}`);
+    console.log(`   Should Respond: ${responseDecision.shouldRespond ? 'YES ✅' : 'NO ⏭️'}`);
+    console.log(`   Reasoning: ${responseDecision.reasoning}`);
+    console.log(`   Confidence: ${responseDecision.confidence}`);
+    console.log(`   Cached: ${responseDecision.cached}`);
+    console.log(`   Queued: ${responseDecision.queued}`);
+    console.log(`   Bypassed Decision Agent: ${responseDecision.bypassedDecisionAgent || false}`);
+    console.log(`${'='.repeat(80)}\n`);
+
+    // If decision is to WAIT (incomplete sentence), return wait instruction
+    if (responseDecision.shouldWait) {
+      console.log(`⏳ Router requesting wait: ${responseDecision.waitSeconds}s (incomplete message detected)`);
+      return c.json({
+        success: true,
+        shouldWait: true,
+        waitSeconds: responseDecision.waitSeconds,
+        reasoning: responseDecision.reasoning,
+        message: responseDecision.reasoning
+      });
+    }
+
+    // Add decision to action feed
+    const actionFeedMessage = actionFeedManager.addRouterDecision({
+      shouldRespond: responseDecision.shouldRespond,
+      reasoning: responseDecision.reasoning,
+      confidence: responseDecision.confidence,
+      transcript,
+      cached: responseDecision.cached,
+      queued: responseDecision.queued
+    });
+
+    // Broadcast router decision to action feed
+    const decisionTimestamp = timestamp || Date.now();
+    const decisionBroadcast = createActionFeedBroadcast(responseDecision, transcript, decisionTimestamp);
+    addToRecentTranscripts(decisionBroadcast);
+
+    // Broadcast to SSE clients
+    for (const client of sseClients) {
+      try {
+        client.send('event: transcript\n' + 'data: ' + JSON.stringify({
+          content: decisionBroadcast
+        }) + '\n\n');
+      } catch (error) {
+        console.error('Error broadcasting router decision:', error);
+      }
+    }
+
+    // If decision is to NOT respond, return early with a silent response
+    if (!responseDecision.shouldRespond) {
+      console.log(`⏭️ Skipping response based on decision agent`);
+      return c.json({
+        success: true,
+        detected: false,  // Changed to false so frontend knows not to show as response
+        skipped: true,
+        response: null,  // Explicitly null so frontend doesn't wait
+        decision: responseDecision,
+        message: responseDecision.reasoning,
+        reasoning: responseDecision.reasoning
+      });
+    }
+
     // Pass request headers for bearer token passthrough
+    // Pass progress callback to broadcast status updates (same as /api/trigger-groq)
     const result = await performGroqInference(
       transcript, 
       user_name, 
       context, 
       filteredChatHistory,
       false, // Don't skip trigger detection
-      null, // No progress callback
+      broadcastProgress, // Pass the progress callback to show "Will use..." messages
       c.req.raw.headers // Pass headers for bearer token auth
     );
 
@@ -1095,7 +1302,9 @@ app.post('/api/trigger-groq', async (c) => {
       user_id,
       timestamp,
       salesforce_credentials,
-      hey_zoom_strategy = 'reluctant'  // Strategy for Hey Zoom responses
+      hey_zoom_strategy = 'reluctant',  // Strategy for Hey Zoom responses
+      manual_execution_mode = false,  // Manual execution mode flag
+      isReplay = false  // Flag to bypass duplicate detection for replay messages
     } = body;
     
     // CRITICAL SAFETY CHECK: Reject AI-generated messages immediately
@@ -1119,24 +1328,29 @@ app.post('/api/trigger-groq', async (c) => {
     }
     
     // Deduplication check: prevent processing same request within dedup window
-    const requestKey = `${transcript.trim()}_${user_name}`;
+    // SKIP duplicate detection for replay messages (user explicitly wants to rerun)
     const now = Date.now();
-    const lastRequestTime = recentRequests.get(requestKey);
-    
-    if (lastRequestTime && (now - lastRequestTime) < REQUEST_DEDUP_WINDOW_MS) {
-      console.log(`   ⚠️ DUPLICATE REQUEST DETECTED - ignoring (last seen ${now - lastRequestTime}ms ago)`);
-      console.log(`   Request key: ${requestKey.substring(0, 50)}...`);
-      return c.json({
-        success: true,
-        detected: true,
-        duplicate: true,
-        message: 'Duplicate request ignored (already processing)'
-      });
+    if (!isReplay) {
+      const requestKey = `${transcript.trim()}_${user_name}`;
+      const lastRequestTime = recentRequests.get(requestKey);
+      
+      if (lastRequestTime && (now - lastRequestTime) < REQUEST_DEDUP_WINDOW_MS) {
+        console.log(`   ⚠️ DUPLICATE REQUEST DETECTED - ignoring (last seen ${now - lastRequestTime}ms ago)`);
+        console.log(`   Request key: ${requestKey.substring(0, 50)}...`);
+        return c.json({
+          success: true,
+          detected: true,
+          duplicate: true,
+          message: 'Duplicate request ignored (already processing)'
+        });
+      }
+      
+      // Track this request (only for non-replay messages)
+      recentRequests.set(requestKey, now);
+      console.log(`   ✅ New request tracked (dedup key: ${requestKey.substring(0, 50)}...)`);
+    } else {
+      console.log(`   🔄 REPLAY REQUEST - bypassing duplicate detection`);
     }
-    
-    // Track this request
-    recentRequests.set(requestKey, now);
-    console.log(`   ✅ New request tracked (dedup key: ${requestKey.substring(0, 50)}...)`);
     
     // Clean up old entries (older than 10 seconds)
     for (const [key, time] of recentRequests.entries()) {
@@ -1165,7 +1379,9 @@ app.post('/api/trigger-groq', async (c) => {
       .filter(msg =>
         msg.user_id !== 'system' &&
         msg.user_id !== 'zoom-ai-router' &&  // Exclude router decision messages
-        msg.data
+        !msg.processing &&  // CRITICAL: Exclude processing/spinner messages (incomplete responses)
+        msg.data &&
+        !msg.data.includes('Fetching response')  // Extra safety: exclude spinner HTML
       )
       .slice(-50); // Keep last 50 messages for context (increased from 10 for better continuity)
 
@@ -1176,6 +1392,7 @@ app.post('/api/trigger-groq', async (c) => {
     // Check for Hey Zoom enabled flag (from request body or default to false)
     const heyZoomEnabled = body.hey_zoom_enabled || false;
     console.log(`   🎛️ Hey Zoom Toggle: ${heyZoomEnabled ? 'ON (bypass decision agent)' : 'OFF (use decision agent)'}`);
+    console.log(`   ⚡ Manual Execution Mode: ${manual_execution_mode ? 'ON (propose actions)' : 'OFF (auto execute)'}`);
 
     // Evaluate whether to respond using decision agent
     console.log(`\n${'='.repeat(80)}`);
@@ -1258,6 +1475,92 @@ app.post('/api/trigger-groq', async (c) => {
       });
     }
 
+    // ============================================================================
+    // MANUAL EXECUTION MODE: Return proposed actions instead of executing
+    // EXCEPTION: Direct answers bypass manual approval and execute immediately
+    // ============================================================================
+    if (manual_execution_mode) {
+      console.log(`🟡 MANUAL EXECUTION MODE: Checking if direct answer or needs tools...`);
+      
+      // Quick router check to determine if this is a direct answer or needs tools
+      let routingDecision;
+      try {
+        console.log(`🔍 Quick router check for manual mode...`);
+        routingDecision = await intelligentRouter(transcript, user_name || 'Unknown', context || 'meeting_transcript', filteredChatHistory);
+        console.log(`✅ Router check complete:`, {
+          tools: routingDecision.tools,
+          tool_count: routingDecision.tools.length,
+          is_direct_answer: routingDecision.tools.length === 1 && routingDecision.tools[0] === 'direct_answer'
+        });
+      } catch (routerError) {
+        console.error(`❌ Router check failed, defaulting to propose action:`, routerError);
+        routingDecision = { tools: ['unknown'], reasoning: 'Router check failed' };
+      }
+      
+      // Check if this is ONLY a direct answer (no tools needed)
+      const isDirectAnswer = routingDecision.tools.length === 1 && 
+                            routingDecision.tools[0] === 'direct_answer';
+      
+      if (isDirectAnswer) {
+        console.log(`✅ Direct answer detected - bypassing manual approval, executing immediately`);
+        console.log(`   Reasoning: ${routingDecision.reasoning}`);
+        // Fall through to normal execution (bypass manual mode for direct answers)
+      } else {
+        console.log(`📋 Tool-required action detected - proposing for manual approval`);
+        console.log(`   Tools needed: ${routingDecision.tools.join(', ')}`);
+        
+        // Create proposed action based on the query
+        const action_id = `action_${Date.now()}`;
+        const proposedAction = {
+          id: action_id,
+          description: `Process: "${transcript.length > 50 ? transcript.substring(0, 50) + '...' : transcript}"`,
+          reasoning: routingDecision.reasoning || responseDecision.reasoning || 'User requested assistance',
+          tools: routingDecision.tools || [], // Include actual tools that will be used
+          originalTranscript: {
+            transcript,
+            user_name,
+            user_id,
+            timestamp: timestamp || Date.now()
+          }
+        };
+        
+        console.log(`📋 Proposed action:`, {
+          id: proposedAction.id,
+          description: proposedAction.description,
+          reasoning: proposedAction.reasoning,
+          tools: proposedAction.tools
+        });
+        
+        // Broadcast proposed action via SSE
+        const sseBroadcastCount = sseClients.size;
+        console.log(`📡 Broadcasting proposed action to ${sseBroadcastCount} SSE clients...`);
+        
+        for (const client of sseClients) {
+          try {
+            client.send('event: proposed-action\n' + 'data: ' + JSON.stringify({
+              content: proposedAction
+            }) + '\n\n');
+            console.log(`✅ Broadcast proposed action via SSE`);
+          } catch (error) {
+            console.error(`❌ Failed to broadcast proposed action:`, error);
+          }
+        }
+        
+        console.log(`\n✅ Returning proposed actions (manual execution mode)`);
+        
+        return c.json({
+          success: true,
+          manual_execution_mode: true,
+          proposed_actions: [proposedAction],
+          detected: true,
+          skipped: false,
+          sse_broadcast_attempted: true,
+          sse_client_count: sseBroadcastCount
+        });
+      }
+      // If isDirectAnswer, continue to normal execution below
+    }
+
     // Add to queue before processing
     const queueId = responseManager.addToQueue(transcript);
 
@@ -1267,6 +1570,7 @@ app.post('/api/trigger-groq', async (c) => {
     // Pass progress callback to broadcast status updates
     // Pass request headers for bearer token passthrough
     let result;
+    let responseTranscript;
     try {
       result = await performGroqInference(
         transcript,
@@ -1283,25 +1587,50 @@ app.post('/api/trigger-groq', async (c) => {
         result,
         timestamp: Date.now()
       });
+
+      // Create response transcript for SSE broadcast
+      // CRITICAL: Always create this even if result is incomplete
+      responseTranscript = {
+        user_id: 'zoom-ai',
+        user_name: 'Zoom AI Assistant',
+        data: result?.response || 'I processed your request but couldn\'t generate a response.',
+        timestamp: Date.now(),
+        tools: result?.tools || [],
+        routing: result?.routing || { reasoning: 'Direct routing', primaryIntent: 'general', confidence: 0.5 },
+        original_message: transcript,
+        citations: result?.citations || [],
+        // Include scratchpad/directives so frontend can update UI
+        scratchpad: result?.scratchpad || null,
+        directives: result?.directives || null
+      };
+    } catch (inferenceError) {
+      console.error('❌ Error in performGroqInference:', inferenceError);
+      // Create a fallback response transcript even on error
+      responseTranscript = {
+        user_id: 'zoom-ai',
+        user_name: 'Zoom AI Assistant',
+        data: `Sorry, I encountered an error processing your request: ${inferenceError.message}`,
+        timestamp: Date.now(),
+        tools: [],
+        routing: { reasoning: 'Error occurred', primaryIntent: 'error', confidence: 0.5 },
+        original_message: transcript,
+        citations: [],
+        error: true,
+        scratchpad: null,
+        directives: null
+      };
+      // Set result to minimal object for error handling below
+      result = {
+        detected: true,
+        response: responseTranscript.data,
+        tools: [],
+        routing: responseTranscript.routing,
+        error: inferenceError.message
+      };
     } finally {
       // Always remove from queue
       responseManager.removeFromQueue(queueId);
     }
-
-    // Create response transcript for SSE broadcast
-    const responseTranscript = {
-      user_id: 'zoom-ai',
-      user_name: 'Zoom AI Assistant',
-      data: result.response || 'I processed your request but couldn\'t generate a response.',
-      timestamp: Date.now(),
-      tools: result.tools || [],
-      routing: result.routing || { reasoning: 'Direct routing', primaryIntent: 'general', confidence: 0.5 },
-      original_message: transcript,
-      citations: result.citations || [],
-      // Include scratchpad/directives so frontend can update UI
-      scratchpad: result.scratchpad || null,
-      directives: result.directives || null
-    };
 
     // Store response transcript for polling endpoint
     addToRecentTranscripts(responseTranscript);
@@ -1314,7 +1643,7 @@ app.post('/api/trigger-groq', async (c) => {
     console.log(`\n${'─'.repeat(80)}`);
     console.log(`📡 [SSE BROADCAST ${broadcastTimestamp}]`);
     console.log(`   Client count: ${sseClientCount}`);
-    console.log(`   Response preview: "${responseTranscript.data?.substring(0, 100)}..."`);
+    console.log(`   [Backend SSE]Response preview: "${responseTranscript.data?.substring(0, 100)}..."`);
     console.log(`   Original message: "${responseTranscript.original_message?.substring(0, 50)}..."`);
     console.log(`${'─'.repeat(80)}`);
     
@@ -1368,11 +1697,29 @@ app.post('/api/trigger-groq', async (c) => {
     // The frontend will prefer SSE delivery but will use this if SSE doesn't arrive
     console.log(`📤 Response strategy: Always including response_transcript as guaranteed fallback (SSE clients: ${sseClientCount}, broadcast attempted: ${sseBroadcastSuccess})`);
 
+    // CRITICAL SAFETY CHECK: Ensure responseTranscript is always defined
+    // This prevents UI hang for quick responses where responseTranscript might not be created
+    if (!responseTranscript) {
+      console.error('⚠️ CRITICAL: responseTranscript is undefined! Creating fallback...');
+      responseTranscript = {
+        user_id: 'zoom-ai',
+        user_name: 'Zoom AI Assistant',
+        data: result?.response || 'I processed your request but couldn\'t generate a response.',
+        timestamp: Date.now(),
+        tools: result?.tools || [],
+        routing: result?.routing || { reasoning: 'Fallback response', primaryIntent: 'general', confidence: 0.5 },
+        original_message: transcript || 'Unknown',
+        citations: result?.citations || [],
+        scratchpad: result?.scratchpad || null,
+        directives: result?.directives || null
+      };
+    }
+
     return c.json({
       success: true,
-      detected: result.detected,
-      tools_used: result.tools?.length || 0,
-      routing_decision: result.routing?.reasoning,
+      detected: result?.detected !== false,
+      tools_used: result?.tools?.length || 0,
+      routing_decision: result?.routing?.reasoning,
       // ALWAYS include response_transcript - frontend will use it if SSE fails/delays
       response_transcript: responseTranscript,
       sse_broadcast_attempted: sseBroadcastSuccess,
@@ -1381,6 +1728,217 @@ app.post('/api/trigger-groq', async (c) => {
 
   } catch (error) {
     console.error('Trigger processing error:', error);
+    
+    // CRITICAL: Even on error, try to include a response_transcript so frontend doesn't hang
+    // This prevents UI from hanging on "fetching response" for quick responses that error
+    const errorResponseTranscript = {
+      user_id: 'zoom-ai',
+      user_name: 'Zoom AI Assistant',
+      data: `Sorry, I encountered an error processing your request: ${error.message}`,
+      timestamp: Date.now(),
+      tools: [],
+      routing: { reasoning: 'Error occurred', primaryIntent: 'error', confidence: 0.5 },
+      original_message: transcript || 'Unknown',
+      citations: [],
+      error: true,
+      scratchpad: null,
+      directives: null
+    };
+    
+    return c.json({
+      success: false,
+      error: error.message,
+      // Always include response_transcript even on error to prevent UI hang
+      response_transcript: errorResponseTranscript,
+      sse_broadcast_attempted: false,
+      sse_client_count: sseClients.size
+    }, 500);
+  }
+});
+
+// ============================================================================
+// EXECUTE ACTION ENDPOINT - Manual Execution Mode
+// ============================================================================
+app.post('/api/execute-action', async (c) => {
+  console.log(`\n${'⚡'.repeat(80)}`);
+  console.log(`⚡ /api/execute-action ENDPOINT HIT`);
+  console.log(`${'⚡'.repeat(80)}\n`);
+  
+  try {
+    const body = await c.req.json();
+    const {
+      action_id,
+      description,
+      original_transcript,
+      chat_history,
+      salesforce_credentials
+    } = body;
+    
+    console.log(`   📋 Action ID: ${action_id}`);
+    console.log(`   📄 Description: ${description}`);
+    console.log(`   👤 Original user: ${original_transcript?.user_name}`);
+    
+    if (!action_id) {
+      console.log(`   ❌ Missing action_id`);
+      return c.json({ 
+        success: false, 
+        error: 'action_id is required' 
+      }, 400);
+    }
+    
+    if (!original_transcript || !original_transcript.transcript) {
+      console.log(`   ❌ Missing original transcript`);
+      return c.json({ 
+        success: false, 
+        error: 'original_transcript is required' 
+      }, 400);
+    }
+    
+    // Extract transcript details
+    const transcript = original_transcript.transcript || original_transcript.data;
+    const user_name = original_transcript.user_name || 'Unknown';
+    const user_id = original_transcript.user_id;
+    const context = 'meeting_transcript';
+    
+    console.log(`   📝 Transcript: "${transcript.substring(0, 50)}${transcript.length > 50 ? '...' : ''}"`);
+    
+    // Store Salesforce credentials if provided
+    if (salesforce_credentials && salesforce_credentials.access_token) {
+      console.log(`   🔐 Received Salesforce credentials`);
+      setSalesforceCredentials('default', salesforce_credentials);
+    }
+    
+    // Prepare chat history
+    const filteredChatHistory = (chat_history || [])
+      .filter(msg =>
+        msg.user_id !== 'system' &&
+        msg.user_id !== 'zoom-ai-router' &&
+        !msg.processing &&
+        msg.data &&
+        !msg.data.includes('Fetching response')
+      )
+      .slice(-50);
+    
+    console.log(`   📋 Chat history: ${filteredChatHistory.length} messages`);
+    
+    // Progress callback that includes action_id
+    const actionProgressCallback = (message) => {
+      console.log(`   📊 Action Progress: ${message}`);
+      
+      // Broadcast progress with action_id
+      for (const client of sseClients) {
+        try {
+          client.send('event: progress\n' + 'data: ' + JSON.stringify({
+            content: {
+              data: message,
+              action_id: action_id  // Include action_id for frontend routing
+            }
+          }) + '\n\n');
+        } catch (error) {
+          console.error(`   ❌ Failed to broadcast action progress:`, error);
+        }
+      }
+    };
+    
+    console.log(`\n   🚀 Executing action inference...\n`);
+    
+    // Execute the action using the inference pipeline
+    actionProgressCallback('Starting action execution...');
+    
+    let result;
+    let responseTranscript;
+    
+    try {
+      result = await performGroqInference(
+        transcript,
+        user_name,
+        context,
+        filteredChatHistory,
+        true,  // skipTriggerDetection
+        actionProgressCallback,  // Progress callback with action_id
+        c.req.raw.headers
+      );
+      
+      actionProgressCallback('Generating response...');
+      
+      // Create response transcript
+      responseTranscript = {
+        user_id: 'zoom-ai',
+        user_name: 'Zoom AI Assistant',
+        data: result?.response || 'Action completed.',
+        timestamp: Date.now(),
+        tools: result?.tools || [],
+        routing: result?.routing || { reasoning: 'Action execution', primaryIntent: 'general', confidence: 0.5 },
+        original_message: transcript,
+        citations: result?.citations || [],
+        actionId: action_id,  // Link to action
+        scratchpad: result?.scratchpad || null,
+        directives: result?.directives || null
+      };
+      
+      console.log(`   ✅ Action executed successfully`);
+      console.log(`   📊 Tools used: ${result?.tools?.length || 0}`);
+      console.log(`   📝 Response length: ${responseTranscript.data?.length || 0} chars`);
+      
+    } catch (inferenceError) {
+      console.error(`   ❌ Action execution error:`, inferenceError);
+      
+      responseTranscript = {
+        user_id: 'zoom-ai',
+        user_name: 'Zoom AI Assistant',
+        data: `Sorry, I encountered an error executing this action: ${inferenceError.message}`,
+        timestamp: Date.now(),
+        tools: [],
+        routing: { reasoning: 'Error occurred', primaryIntent: 'error', confidence: 0.5 },
+        original_message: transcript,
+        citations: [],
+        actionId: action_id,
+        error: true,
+        scratchpad: null,
+        directives: null
+      };
+    }
+    
+    // Broadcast action completion via SSE
+    console.log(`\n   📡 Broadcasting action completion via SSE...`);
+    const sseBroadcastCount = sseClients.size;
+    
+    for (const client of sseClients) {
+      try {
+        // Broadcast action-completed event
+        client.send('event: action-completed\n' + 'data: ' + JSON.stringify({
+          content: {
+            action_id: action_id,
+            response_transcript: responseTranscript
+          }
+        }) + '\n\n');
+        
+        // Also broadcast the transcript itself for normal feed
+        client.send('event: transcript\n' + 'data: ' + JSON.stringify({
+          content: responseTranscript
+        }) + '\n\n');
+        
+        console.log(`   ✅ Broadcast action completion via SSE`);
+      } catch (error) {
+        console.error(`   ❌ Failed to broadcast action completion:`, error);
+      }
+    }
+    
+    console.log(`\n✅ Action execution complete`);
+    console.log(`${'⚡'.repeat(80)}\n`);
+    
+    // Return response (HTTP fallback)
+    return c.json({
+      success: true,
+      action_id: action_id,
+      response_transcript: responseTranscript,
+      sse_broadcast_attempted: true,
+      sse_client_count: sseBroadcastCount
+    });
+    
+  } catch (error) {
+    console.error(`❌ Execute action error:`, error);
+    
     return c.json({
       success: false,
       error: error.message

@@ -189,30 +189,14 @@ export async function evaluateResponseNeed(groqClient, config) {
 
   const isPlanningRequest = planningKeywords.some(pattern => pattern.test(normalized));
 
-  // Only do cache check if NOT a planning request
-  if (!isPlanningRequest) {
-    const check = responseManager.checkTopic(normalized);
-
-    if (check.shouldSkip) {
-      return {
-        shouldRespond: false,
-        reasoning: check.cached
-          ? `Already responded to similar query recently (cached)`
-          : `Currently processing similar query (queued)`,
-        confidence: 1.0,
-        cached: check.cached,
-        queued: check.queued
-      };
-    }
-  } else {
-    console.log('🎨 Planning/creative request detected - bypassing cache check');
-  }
-
-  // Keyword-based fallback for obvious requests (before AI evaluation)
+  // Keyword-based fallback for obvious requests (BEFORE cache check to bypass it)
   // This prevents AI models from being overly conservative on clear requests
   const obviousRequestPatterns = [
     /what'?s?\s+(?:the\s+)?weather/i,
     /weather\s+(?:in|at|for)/i,
+    /(?:will|is|does)\s+it\s+(?:rain|snow|snowing|raining)/i,  // "will it rain", "is it raining", etc.
+    /rain\s+(?:in|at|for)/i,  // "rain in [location]"
+    /(?:rain|snow|forecast|temperature|sunny|cloudy|windy)\s+(?:in|at|for)\s+[A-Za-z]/i,  // Any weather term + location
     /search\s+(?:for|about)/i,
     /find\s+(?:me\s+)?(?:information|info|data|details)/i,
     /look\s+up/i,
@@ -232,8 +216,9 @@ export async function evaluateResponseNeed(groqClient, config) {
 
   const hasObviousRequest = obviousRequestPatterns.some(pattern => pattern.test(normalized));
 
+  // If it's an obvious request or planning request, bypass cache check and AI evaluation
   if (hasObviousRequest || isPlanningRequest) {
-    console.log('🎯 Obvious request detected via keywords - bypassing conservative AI evaluation');
+    console.log('🎯 Obvious request detected via keywords - bypassing cache check and conservative AI evaluation');
     return {
       shouldRespond: true,
       reasoning: isPlanningRequest
@@ -244,6 +229,23 @@ export async function evaluateResponseNeed(groqClient, config) {
       queued: false,
       bypassedDecisionAgent: true
     };
+  }
+
+  // Only do cache check if NOT a planning request and NOT an obvious request
+  if (!isPlanningRequest && !hasObviousRequest) {
+    const check = responseManager.checkTopic(normalized);
+
+    if (check.shouldSkip) {
+      return {
+        shouldRespond: false,
+        reasoning: check.cached
+          ? `Already responded to similar query recently (cached)`
+          : `Currently processing similar query (queued)`,
+        confidence: 1.0,
+        cached: check.cached,
+        queued: check.queued
+      };
+    }
   }
 
   // Build context from chat history (increased from 10 to 30 for better continuity)

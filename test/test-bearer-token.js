@@ -2,7 +2,7 @@
  * Test script for bearer token authentication
  * 
  * Usage:
- * deno run --allow-net --allow-env test-bearer-token.js
+ * deno run --allow-net --allow-env test/test-bearer-token.js
  * 
  * This tests the new /sse/message endpoint with bearer token authentication
  */

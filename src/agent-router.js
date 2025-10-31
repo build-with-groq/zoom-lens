@@ -40,7 +40,7 @@ export const AGENT_REGISTRY = {
   'agent-1': {
     name: 'Agent-1: Production Assistant',
     description: 'Current production implementation with intelligent routing, tool selection, and response filtering',
-    modulePath: './experiments/agent-1/agent-1-inference.js',
+    modulePath: '../experiments/agent-1/agent-1-inference.js',
     supportsFiltering: true,
     supportsOrchestration: true,
     supportsScratchpad: true,

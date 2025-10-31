@@ -36,45 +36,113 @@ Zoom Lens V2 uses an AI-powered intelligent routing system that analyzes user qu
 
 
 
+## Prerequisites
+
+- [Deno](https://deno.com/) runtime
+- Zoom App Marketplace account with RTMS enabled
+- Environment variables configured (see below)
+
+## Setup
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd zoom-lens-project/zoom-lens-v2
+   ```
+
+2. **Install dependencies**
+   ```bash
+   # Dependencies are automatically managed by Deno
+   # No npm install required
+   ```
+
+3. **Configure environment variables**
+
+   Create a `.env` file in the project root:
+
+   ```env
+   # Zoom RTMS Credentials (from Zoom App Marketplace)
+   ZOOM_CLIENT_ID=your_zoom_client_id
+   ZOOM_CLIENT_SECRET=your_zoom_client_secret
+   ZOOM_SECRET_TOKEN=your_zoom_secret_token
+
+   # Optional: Custom webhook path (defaults to /webhook)
+   WEBHOOK_PATH=/webhook
+   
+   # Groq API Key
+   GROQ_API_KEY=your_groq_api_key
+   
+   # Salesforce MCP Configuration
+   SALESFORCE_MCP_URL=your_salesforce_mcp_url
+   
+   # AI Model Configuration (Optional - Override to test different models)
+   # All default to their specified fallback models if not set
+   
+   # Intelligent routing decisions (default: openai/gpt-oss-20b)
+   MODEL_ROUTER=openai/gpt-oss-20b
+   
+   # Discovery mode analysis (default: openai/gpt-oss-20b)
+   MODEL_DISCOVERY=openai/gpt-oss-20b
+   
+   # Fact extraction from research (default: openai/gpt-oss-20b)
+   MODEL_EXTRACTOR=openai/gpt-oss-20b
+   
+   # Text compression/distillation (default: openai/gpt-oss-20b)
+   MODEL_COMPRESSOR=openai/gpt-oss-20b
+   
+   # Main inference with MCP tools (default: openai/gpt-oss-120b)
+   MODEL_INFERENCE=openai/gpt-oss-120b
+   
+   # Direct answers without tools (default: openai/gpt-oss-120b)
+   MODEL_DIRECT_ANSWER=openai/gpt-oss-120b
+   
+   # Multi-tool response synthesis (default: openai/gpt-oss-120b)
+   MODEL_SYNTHESIS=openai/gpt-oss-120b
+   ```
+
 ## Running the Application
 
+### Development Mode
 ```bash
-# Set environment variables
-export ZOOM_CLIENT_ID="your_zoom_client_id"
-export ZOOM_CLIENT_SECRET="your_zoom_client_secret"
-export ZOOM_SECRET_TOKEN="your_zoom_secret_token"
-export GROQ_API_KEY="your_groq_api_key"
-
-# Run locally
 deno task serve
-
-# Deploy to Deno Deploy
-deployctl deploy --project=your-project main.js
+# or directly:
+deno serve --port 9995 --watch --allow-read --allow-env --allow-write --allow-net ./main.js
 ```
 
-## Available Agents
+### Production Deployment
+```bash
+deno task prod
+```
 
-### Agent-1: The Thoughtful Assistant
-- **Philosophy**: "Better to stay silent than be annoying"
-- **Architecture**: Poke-inspired orchestration (Interaction Agent + Execution Agent)
-- **Best For**: Background assistance, discovery mode, meeting contexts, active Q&A sessions
-- **Characteristics**: Filters outputs, stays silent when appropriate, rate-limited discoveries, intelligent routing
+The application will be available at:
+- **Main UI**: `http://localhost:9995/`
+- **Webhook Endpoint**: `http://localhost:9995/webhook`
+- **SSE Stream**: `http://localhost:9995/events`
 
-**Key Innovation**: Separates eager execution from thoughtful presentation
-- **Interaction Agent** acts as gatekeeper, decides what reaches user
-- **Execution Agent** can be thorough without being annoying
-- Inspired by [Poke's multi-agent architecture](https://shlokkhemani.com/writing/openpoke)
+## Zoom RTMS Configuration
 
-**Features**:
-- Intelligent tool routing and selection
-- Context-aware response filtering
-- Multi-tool request handling
-- Scratchpad for meeting notes
-- Discovery mode support
-- Progress broadcasting via SSE
+1. **Create a Zoom App** in the [Zoom App Marketplace](https://marketplace.zoom.us/)
+2. **Enable RTMS** in your app settings
+3. **Configure Webhook URL** pointing to your deployed endpoint
+4. **Set Event Types** to include:
+   - `meeting.rtms_started`
+   - `meeting.rtms_stopped`
+   - `endpoint.url_validation`
 
+## Agent Design
 
+The Zoom Lens V2 architecture is designed with modularity in mind—you can easily swap out the default agent implementation with other experimental agents. Each agent variant can be placed in its own directory under `/experiments/agent-{n}` while sharing common utilities and infrastructure from the `/utils` directory. This allows for easy experimentation and comparison of different agent approaches.
 
+### Assistant Design
+
+The default agent implementation uses a dual-agent architecture consisting of an Interaction Agent and an Execution Agent, based on [Poke's multi-agent design](https://shlokkhemani.com/writing/openpoke). The Interaction Agent functions as a filter layer that evaluates whether responses should be presented to the user, while the Execution Agent performs tool execution and information gathering without presentation constraints. The intelligent routing system analyzes user intent and spawns separate agent instances for individual tool calls, enabling parallel execution of multiple tools independently. The system implements request deduplication, rate-limited discovery operations, and maintains chat history for context. It provides a scratchpad for meeting notes and broadcasts progress updates via Server-Sent Events.
+
+## Documentation
+
+- [Zoom RTMS Documentation](https://developers.zoom.us/docs/rtms/)
+- [Groq Compound API](https://console.groq.com/docs/compound/systems/compound)
+- [Hono Framework](https://hono.dev/)
+- [Deno Deploy](https://deno.com/deploy)
 
 ## Contributing
 
