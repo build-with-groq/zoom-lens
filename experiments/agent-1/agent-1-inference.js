@@ -527,6 +527,48 @@ Response: {
   "scratchpad_notes": "User asked for SF weather during conversation with Bob Jones"
 }
 
+Question: "tell me a joke"
+Response: {
+  "tools": [
+    {
+      "tool_id": "direct_answer",
+      "functions": [],
+      "params": {}
+    }
+  ],
+  "reasoning": "User requests a joke, which can be answered directly without external tools",
+  "primary_intent": "general_query",
+  "confidence": 0.95
+}
+
+Question: "what is 2+2?"
+Response: {
+  "tools": [
+    {
+      "tool_id": "direct_answer",
+      "functions": [],
+      "params": {}
+    }
+  ],
+  "reasoning": "Simple math question that can be answered directly without external computation",
+  "primary_intent": "general_query",
+  "confidence": 0.98
+}
+
+Question: "explain quantum computing"
+Response: {
+  "tools": [
+    {
+      "tool_id": "direct_answer",
+      "functions": [],
+      "params": {}
+    }
+  ],
+  "reasoning": "General knowledge question that can be answered with training data",
+  "primary_intent": "explanation",
+  "confidence": 0.92
+}
+
 Now analyze the user's question and return ONLY valid JSON:`;
 
     // Race-based retry system: Fire initial request, then fire a retry after configured delay
@@ -1067,9 +1109,9 @@ export async function answerDirectly(question, context = {}) {
       day: 'numeric' 
     });
 
-    const systemPrompt = `You are a friendly, conversational AI assistant chatting with ${context.userName || 'someone'}. TODAY'S DATE: ${today}
+    const systemPrompt = `You are Zoom, the Zoom AI Assistant - a friendly, conversational AI assistant integrated into Zoom meetings. Your name is Zoom. You're chatting with ${context.userName || 'someone'}. TODAY'S DATE: ${today}
 
-Have a natural conversation - respond directly to what they're saying, reference earlier parts of the chat when relevant, and keep it casual and genuine. Don't over-explain or show your work unless asked.`;
+Have a natural conversation - respond directly to what they're saying, reference earlier parts of the chat when relevant, and keep it casual and genuine. Don't over-explain or show your work unless asked. Remember that you are Zoom, the Zoom AI Assistant.`;
 
     const messages = [
       {

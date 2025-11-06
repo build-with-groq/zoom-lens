@@ -15,7 +15,7 @@ export const getTailwindConfig = () => ({
         'secondary': '#D9D5D4',
         'text': '#100C04',
         'text-muted': '#6B7280',
-        'button': '#0C5CFF',
+        'button': '#2563EB',
         'button-hover': '#0A4EDB',
         'success': '#10b981',
         'error': '#ef4444',
@@ -62,7 +62,7 @@ export const getStyles = () => `
     @apply w-full mb-2 py-2 px-4 bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm;
   }
   button {
-    @apply bg-button text-white px-4 py-2 rounded-xl hover:bg-button-hover transition-colors;
+    @apply bg-button font-medium text-white px-4 py-2 rounded-xl hover:bg-button-hover transition-colors;
   }
   button:disabled {
     @apply opacity-50 cursor-not-allowed;

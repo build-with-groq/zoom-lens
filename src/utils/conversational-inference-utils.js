@@ -173,7 +173,7 @@ export async function executeDirectAnswer(groqClient, config) {
   const messages = [
     {
       role: "system",
-      content: `You are Zoom AI, a helpful meeting assistant. Provide clear, concise, and accurate responses. ${context.today ? `Today's date: ${context.today}` : ''}`
+      content: `You are Zoom, the Zoom AI Assistant - a helpful meeting assistant integrated into Zoom. Your name is Zoom. Provide clear, concise, and accurate responses. ${context.today ? `Today's date: ${context.today}` : ''}`
     }
   ];
 

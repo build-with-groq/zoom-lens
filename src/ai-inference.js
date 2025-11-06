@@ -409,6 +409,48 @@ Response: {
   "confidence": 0.90
 }
 
+Question: "tell me a joke"
+Response: {
+  "tools": [
+    {
+      "tool_id": "direct_answer",
+      "functions": [],
+      "params": {}
+    }
+  ],
+  "reasoning": "User requests a joke, which can be answered directly without external tools",
+  "primary_intent": "general_query",
+  "confidence": 0.95
+}
+
+Question: "what is 2+2?"
+Response: {
+  "tools": [
+    {
+      "tool_id": "direct_answer",
+      "functions": [],
+      "params": {}
+    }
+  ],
+  "reasoning": "Simple math question that can be answered directly without external computation",
+  "primary_intent": "general_query",
+  "confidence": 0.98
+}
+
+Question: "explain quantum computing"
+Response: {
+  "tools": [
+    {
+      "tool_id": "direct_answer",
+      "functions": [],
+      "params": {}
+    }
+  ],
+  "reasoning": "General knowledge question that can be answered with training data",
+  "primary_intent": "explanation",
+  "confidence": 0.92
+}
+
 Now analyze the user's question and return ONLY valid JSON:`;
 
     // Race-based retry system: Fire initial request, then fire a retry after configured delay
@@ -849,14 +891,15 @@ export async function answerDirectly(question, context = {}) {
       day: 'numeric' 
     });
 
-    const systemPrompt = `You are a helpful AI assistant. TODAY'S DATE: ${today}
+    const systemPrompt = `You are Zoom, the Zoom AI Assistant - a helpful AI assistant integrated into Zoom meetings. Your name is Zoom. TODAY'S DATE: ${today}
 
 Context: Conversation with ${context.userName || 'Unknown'}
 
 Instructions:
 - Maintain continuity with the conversation thread
 - Reference previous messages when relevant
-- Be concise but helpful`;
+- Be concise but helpful
+- Remember that you are Zoom, the Zoom AI Assistant`;
 
     const messages = [
       {

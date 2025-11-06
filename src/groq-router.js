@@ -227,6 +227,48 @@ Response: {
   "confidence": 0.90
 }
 
+Question: "tell me a joke"
+Response: {
+  "tools": [
+    {
+      "tool_id": "direct_answer",
+      "functions": [],
+      "params": {}
+    }
+  ],
+  "reasoning": "User requests a joke, which can be answered directly without external tools",
+  "primary_intent": "general_query",
+  "confidence": 0.95
+}
+
+Question: "what is 2+2?"
+Response: {
+  "tools": [
+    {
+      "tool_id": "direct_answer",
+      "functions": [],
+      "params": {}
+    }
+  ],
+  "reasoning": "Simple math question that can be answered directly without external computation",
+  "primary_intent": "general_query",
+  "confidence": 0.98
+}
+
+Question: "explain quantum computing"
+Response: {
+  "tools": [
+    {
+      "tool_id": "direct_answer",
+      "functions": [],
+      "params": {}
+    }
+  ],
+  "reasoning": "General knowledge question that can be answered with training data",
+  "primary_intent": "explanation",
+  "confidence": 0.92
+}
+
 Now analyze the user's question and return ONLY valid JSON:`;
 
     const response = await groqClient.chat.completions.create({
