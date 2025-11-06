@@ -231,7 +231,7 @@
                     @change="localStorage.setItem('manualExecutionMode', manualExecutionMode)"
                     class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   />
-                  <span class="text-xs text-gray-600">Manual Execution (review actions before running)</span>
+                  <span class="text-xs text-gray-600">Actions Queue (review actions before running)</span>
                 </label>
                 <span 
                   class="text-xs px-2 py-0.5 rounded-full"
@@ -478,7 +478,7 @@
             <p class="text-sm text-text-muted">Assistant responses and tool results from your "Hey Zoom" requests.</p>
           </div>
           
-          <!-- Actions Panel (Manual Execution Mode) -->
+          <!-- Actions Panel (Actions Queue Mode) -->
           <div x-show="manualExecutionMode" class="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-300">
             <div class="flex items-center justify-between mb-3">
               <div class="flex items-center gap-2">
@@ -504,29 +504,21 @@
             
             <!-- Pending Actions -->
             <div x-show="pendingActions.length > 0" class="space-y-2">
-              <template x-for="action in pendingActions.filter(a => a.status !== 'completed')" :key="action.id">
+              <template x-for="action in pendingActions" :key="action.id">
                 <div 
-                  class="p-3 bg-white rounded-lg border transition-all card-entrance"
+                  class="p-3 rounded-lg border transition-all card-entrance"
                   :class="{
-                    'border-gray-300': action.status === 'pending',
-                    'border-blue-500 shadow-sm': action.status === 'in-progress'
+                    'bg-white border-gray-300': action.status === 'pending',
+                    'bg-white border-blue-500 shadow-sm': action.status === 'in-progress',
+                    'bg-blue-50 border-blue-200': action.status === 'completed'
                   }"
                 >
                   <div class="flex items-start gap-3">
-                    <!-- Status Icon -->
-                    <div class="flex-shrink-0 mt-0.5">
-                      <div x-show="action.status === 'pending'" class="w-5 h-5 rounded-full border-2 border-gray-400 flex items-center justify-center">
-                        <span class="text-xs">▶</span>
-                      </div>
-                      <div x-show="action.status === 'in-progress'" class="w-5 h-5">
-                        <div class="w-5 h-5 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
-                      </div>
-                    </div>
-                    
                     <!-- Action Content -->
                     <div class="flex-1 min-w-0">
                       <div class="text-sm font-medium text-gray-800" x-text="action.description"></div>
-                      <div x-show="action.reasoning" class="text-xs text-gray-500 mt-1" x-text="action.reasoning"></div>
+                      <div x-show="action.reasoning && action.status !== 'completed'" class="text-xs text-gray-500 mt-1" x-text="action.reasoning"></div>
+                      <div x-show="action.status === 'completed'" class="text-xs text-blue-600 mt-1">Completed</div>
                       
                       <!-- Progress Messages (in-progress only) -->
                       <div x-show="action.status === 'in-progress' && action.progressMessage" class="mt-2 text-xs text-blue-600 flex items-center gap-2">
@@ -535,22 +527,35 @@
                       
                       <!-- Tools Used -->
                       <div x-show="action.tools && action.tools.length > 0" class="mt-2">
-                        <span class="badge badge-tool text-xs" x-text="action.tools.map(t => getToolDisplayName(t)).join(', ')"></span>
+                        <span class="badge badge-tool text-xs !ml-0" x-text="action.tools.map(t => getToolDisplayName(t)).join(', ')"></span>
                       </div>
                     </div>
                     
                     <!-- Action Buttons -->
                     <div class="flex-shrink-0 flex items-center gap-2">
-                      <!-- Play Button -->
+                      <!-- Play Button (pending) / Loader (in-progress) -->
                       <button
-                        x-show="action.status === 'pending'"
-                        @click.stop="executeAction(action)"
-                        class="p-1.5 text-white hover:text-blue-100 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
-                        title="Run this action"
+                        x-show="action.status === 'pending' || action.status === 'in-progress'"
+                        @click.stop="action.status === 'pending' ? executeAction(action) : null"
+                        :class="action.status === 'pending' ? 'hover:text-blue-500 hover:bg-blue-50 cursor-pointer' : 'cursor-default'"
+                        class="p-1.5 text-white rounded transition-colors"
+                        :title="action.status === 'pending' ? 'Run this action' : 'Running...'"
                       >
-                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <svg x-show="action.status === 'pending'" class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                           <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"></path>
                         </svg>
+                        <div x-show="action.status === 'in-progress'" class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+                      </button>
+                      
+                      <!-- Answer Button (completed only) -->
+                      <button
+                        x-show="action.status === 'completed' && action.responseData"
+                        @click.stop="action.expanded = !action.expanded; saveActions()"
+                        class="px-2 py-1 text-xs text-blue-600 bg-blue-50 border border-blue-600 hover:bg-blue-100 rounded transition-colors flex items-center gap-1"
+                        title="View answer details"
+                      >
+                        <span x-text="action.expanded ? '▼' : '▶'"></span>
+                        <span>Answer</span>
                       </button>
                       
                       <!-- Delete Button -->
@@ -565,64 +570,20 @@
                       </button>
                     </div>
                   </div>
-                </div>
-              </template>
-              
-              <!-- Completed Actions -->
-              <template x-for="action in pendingActions.filter(a => a.status === 'completed')" :key="action.id">
-                <div class="p-3 bg-green-50 rounded-lg border border-green-200 card-entrance">
-                  <div class="flex items-start gap-3">
-                    <div class="flex-shrink-0 mt-0.5">
-                      <div class="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
-                        <span class="text-white text-xs">✓</span>
-                      </div>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center justify-between">
-                        <div class="flex-1">
-                          <div class="text-sm font-medium text-gray-800" x-text="action.description"></div>
-                          <div class="text-xs text-green-600 mt-1">Completed</div>
-                        </div>
-                        <div class="flex items-center gap-2 ml-2">
-                          <!-- Expand Answer Button -->
-                          <button
-                            x-show="action.responseData"
-                            @click.stop="action.expanded = !action.expanded"
-                            class="p-1.5 text-white hover:text-blue-500 hover:bg-gray-100 rounded transition-colors text-xs flex items-center gap-1"
-                            title="View answer details"
-                          >
-                            <span x-text="action.expanded ? '▼' : '▶'"></span>
-                            <span>Answer</span>
-                          </button>
-                          
-                          <!-- Delete Button -->
-                          <button
-                            @click.stop="deleteAction(action.id)"
-                            class="p-1.5 text-gray-100 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                            title="Delete this action"
-                          >
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <!-- Expandable Answer Detail -->
-                      <div 
-                        x-show="action.expanded && action.responseData" 
-                        x-transition:enter="transition ease-out duration-200"
-                        x-transition:enter-start="opacity-0 max-h-0"
-                        x-transition:enter-end="opacity-100 max-h-screen"
-                        x-transition:leave="transition ease-in duration-150"
-                        x-transition:leave-start="opacity-100 max-h-screen"
-                        x-transition:leave-end="opacity-0 max-h-0"
-                        class="mt-3 pt-3 border-t border-green-200 overflow-hidden"
-                      >
-                        <div class="text-xs font-medium text-gray-700 mb-2">Answer:</div>
-                        <div class="text-sm text-gray-600 markdown-content" x-html="formatAssistantResponse({user_id: 'zoom-ai', data: action.responseData})"></div>
-                      </div>
-                    </div>
+                  
+                  <!-- Expandable Answer Detail (for completed actions) -->
+                  <div 
+                    x-show="action.status === 'completed' && action.expanded && action.responseData" 
+                    x-transition:enter="transition ease-out duration-200"
+                    x-transition:enter-start="opacity-0 max-h-0"
+                    x-transition:enter-end="opacity-100 max-h-screen"
+                    x-transition:leave="transition ease-in duration-150"
+                    x-transition:leave-start="opacity-100 max-h-screen"
+                    x-transition:leave-end="opacity-0 max-h-0"
+                    class="mt-3 pt-3 border-t border-blue-200 overflow-hidden"
+                  >
+                    <div class="text-xs font-medium text-gray-700 mb-2">Answer:</div>
+                    <div class="text-sm text-gray-600 markdown-content" x-html="formatAssistantResponse({user_id: 'zoom-ai', data: action.responseData})"></div>
                   </div>
                 </div>
               </template>
@@ -650,7 +611,7 @@
               <template x-for="(t, i) in transcripts.filter(t => t.user_id === 'zoom-ai' || t.user_id === 'system').sort((a, b) => b.timestamp - a.timestamp)" :key="i">
                 <div>
                   <!-- Processing messages and regular AI responses: same full container format -->
-                  <div x-show="t.user_id === 'zoom-ai'" class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2 card-entrance">
+                  <div x-show="t.user_id === 'zoom-ai' && !manualExecutionMode" class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-5 bg-white rounded-xl shadow-sm mb-2 card-entrance">
                     <!-- Replay button (appears on hover) - Hidden for AI responses and router decisions -->
                     <button
                       x-show="t.original_message && t.user_id !== 'zoom-ai-router'"
@@ -1132,7 +1093,7 @@
             <p class="text-sm text-text-muted">Full conversation history with all participants.</p>
           </div>
           
-          <!-- Actions Panel (Manual Execution Mode) - Same as Action Feed -->
+          <!-- Actions Panel (Actions Queue Mode) - Same as Action Feed -->
           <div x-show="manualExecutionMode && pendingActions.length > 0" class="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-300">
             <div class="flex items-center justify-between mb-3">
               <div class="flex items-center gap-2">
@@ -1150,29 +1111,21 @@
             
             <!-- Pending Actions -->
             <div class="space-y-2">
-              <template x-for="action in pendingActions.filter(a => a.status !== 'completed')" :key="action.id">
+              <template x-for="action in pendingActions" :key="action.id">
                 <div 
-                  class="p-3 bg-white rounded-lg border transition-all card-entrance"
+                  class="p-3 rounded-lg border transition-all card-entrance"
                   :class="{
-                    'border-gray-300': action.status === 'pending',
-                    'border-blue-500 shadow-sm': action.status === 'in-progress'
+                    'bg-white border-gray-300': action.status === 'pending',
+                    'bg-white border-blue-500 shadow-sm': action.status === 'in-progress',
+                    'bg-blue-50 border-blue-200': action.status === 'completed'
                   }"
                 >
                   <div class="flex items-start gap-3">
-                    <!-- Status Icon -->
-                    <div class="flex-shrink-0 mt-0.5">
-                      <div x-show="action.status === 'pending'" class="w-5 h-5 rounded-full border-2 border-gray-400 flex items-center justify-center">
-                        <span class="text-xs">▶</span>
-                      </div>
-                      <div x-show="action.status === 'in-progress'" class="w-5 h-5">
-                        <div class="w-5 h-5 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
-                      </div>
-                    </div>
-                    
                     <!-- Action Content -->
                     <div class="flex-1 min-w-0">
                       <div class="text-sm font-medium text-gray-800" x-text="action.description"></div>
-                      <div x-show="action.reasoning" class="text-xs text-gray-500 mt-1" x-text="action.reasoning"></div>
+                      <div x-show="action.reasoning && action.status !== 'completed'" class="text-xs text-gray-500 mt-1" x-text="action.reasoning"></div>
+                      <div x-show="action.status === 'completed'" class="text-xs text-blue-600 mt-1">Completed</div>
                       
                       <!-- Progress Messages (in-progress only) -->
                       <div x-show="action.status === 'in-progress' && action.progressMessage" class="mt-2 text-xs text-blue-600 flex items-center gap-2">
@@ -1181,22 +1134,35 @@
                       
                       <!-- Tools Used -->
                       <div x-show="action.tools && action.tools.length > 0" class="mt-2">
-                        <span class="badge badge-tool text-xs" x-text="action.tools.map(t => getToolDisplayName(t)).join(', ')"></span>
+                        <span class="badge badge-tool text-xs !ml-0" x-text="action.tools.map(t => getToolDisplayName(t)).join(', ')"></span>
                       </div>
                     </div>
                     
                     <!-- Action Buttons -->
                     <div class="flex-shrink-0 flex items-center gap-2">
-                      <!-- Play Button -->
+                      <!-- Play Button (pending) / Loader (in-progress) -->
                       <button
-                        x-show="action.status === 'pending'"
-                        @click.stop="executeAction(action)"
-                        class="p-1.5 text-white hover:text-blue-100 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
-                        title="Run this action"
+                        x-show="action.status === 'pending' || action.status === 'in-progress'"
+                        @click.stop="action.status === 'pending' ? executeAction(action) : null"
+                        :class="action.status === 'pending' ? 'hover:text-blue-500 hover:bg-blue-50 cursor-pointer' : 'cursor-default'"
+                        class="p-1.5 text-white rounded transition-colors"
+                        :title="action.status === 'pending' ? 'Run this action' : 'Running...'"
                       >
-                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <svg x-show="action.status === 'pending'" class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                           <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"></path>
                         </svg>
+                        <div x-show="action.status === 'in-progress'" class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+                      </button>
+                      
+                      <!-- Answer Button (completed only) -->
+                      <button
+                        x-show="action.status === 'completed' && action.responseData"
+                        @click.stop="action.expanded = !action.expanded; saveActions()"
+                        class="px-2 py-1 text-xs text-blue-600 bg-blue-50 border border-blue-600 hover:bg-blue-100 rounded transition-colors flex items-center gap-1"
+                        title="View answer details"
+                      >
+                        <span x-text="action.expanded ? '▼' : '▶'"></span>
+                        <span>Answer</span>
                       </button>
                       
                       <!-- Delete Button -->
@@ -1211,64 +1177,20 @@
                       </button>
                     </div>
                   </div>
-                </div>
-              </template>
-              
-              <!-- Completed Actions -->
-              <template x-for="action in pendingActions.filter(a => a.status === 'completed')" :key="action.id">
-                <div class="p-3 bg-green-50 rounded-lg border border-green-200 card-entrance">
-                  <div class="flex items-start gap-3">
-                    <div class="flex-shrink-0 mt-0.5">
-                      <div class="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
-                        <span class="text-white text-xs">✓</span>
-                      </div>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center justify-between">
-                        <div class="flex-1">
-                          <div class="text-sm font-medium text-gray-800" x-text="action.description"></div>
-                          <div class="text-xs text-green-600 mt-1">Completed</div>
-                        </div>
-                        <div class="flex items-center gap-2 ml-2">
-                          <!-- Expand Answer Button -->
-                          <button
-                            x-show="action.responseData"
-                            @click.stop="action.expanded = !action.expanded"
-                            class="p-1.5 text-white hover:text-blue-500 hover:bg-gray-100 rounded transition-colors text-xs flex items-center gap-1"
-                            title="View answer details"
-                          >
-                            <span x-text="action.expanded ? '▼' : '▶'"></span>
-                            <span>Answer</span>
-                          </button>
-                          
-                          <!-- Delete Button -->
-                          <button
-                            @click.stop="deleteAction(action.id)"
-                            class="p-1.5 text-gray-100 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                            title="Delete this action"
-                          >
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <!-- Expandable Answer Detail -->
-                      <div 
-                        x-show="action.expanded && action.responseData" 
-                        x-transition:enter="transition ease-out duration-200"
-                        x-transition:enter-start="opacity-0 max-h-0"
-                        x-transition:enter-end="opacity-100 max-h-screen"
-                        x-transition:leave="transition ease-in duration-150"
-                        x-transition:leave-start="opacity-100 max-h-screen"
-                        x-transition:leave-end="opacity-0 max-h-0"
-                        class="mt-3 pt-3 border-t border-green-200 overflow-hidden"
-                      >
-                        <div class="text-xs font-medium text-gray-700 mb-2">Answer:</div>
-                        <div class="text-sm text-gray-600 markdown-content" x-html="formatAssistantResponse({user_id: 'zoom-ai', data: action.responseData})"></div>
-                      </div>
-                    </div>
+                  
+                  <!-- Expandable Answer Detail (for completed actions) -->
+                  <div 
+                    x-show="action.status === 'completed' && action.expanded && action.responseData" 
+                    x-transition:enter="transition ease-out duration-200"
+                    x-transition:enter-start="opacity-0 max-h-0"
+                    x-transition:enter-end="opacity-100 max-h-screen"
+                    x-transition:leave="transition ease-in duration-150"
+                    x-transition:leave-start="opacity-100 max-h-screen"
+                    x-transition:leave-end="opacity-0 max-h-0"
+                    class="mt-3 pt-3 border-t border-blue-200 overflow-hidden"
+                  >
+                    <div class="text-xs font-medium text-gray-700 mb-2">Answer:</div>
+                    <div class="text-sm text-gray-600 markdown-content" x-html="formatAssistantResponse({user_id: 'zoom-ai', data: action.responseData})"></div>
                   </div>
                 </div>
               </template>
@@ -1294,7 +1216,7 @@
           </div>
           <div>
               <template x-for="(t, i) in transcripts.filter(t => t.user_id !== 'discovery-ai').sort((a, b) => b.timestamp - a.timestamp)" :key="i">
-                <div x-show="t.user_id !== 'zoom-ai-router' || showRouterRejections"
+                <div x-show="(t.user_id !== 'zoom-ai-router' || showRouterRejections) && !(t.user_id === 'zoom-ai' && manualExecutionMode)"
                      class="group relative grid grid-cols-[60px_1fr] gap-4 py-6 pr-4 max-w-4xl mx-2 md:mx-auto px-8 pt-3 pb-3 rounded-xl mb-2 card-entrance"
                      :class="t.user_id === 'zoom-ai-router' ? '' : 'bg-white'">
                   <!-- Replay button (appears on hover) - Hidden for AI responses, router decisions, and system messages -->
@@ -2029,6 +1951,7 @@
 
         init() {
           this.loadStoredTranscripts();
+          this.loadStoredActions();
           this.connectSSE();
           this.loadMicSettings();
           this.loadRequireHeyZoomSettings();
@@ -2505,6 +2428,29 @@
           }
         },
 
+        loadStoredActions() {
+          try {
+            const stored = localStorage.getItem('zoom-pending-actions');
+            if (stored) {
+              this.pendingActions = JSON.parse(stored);
+              console.log(`✅ Loaded ${this.pendingActions.length} pending action(s) from localStorage`);
+            }
+          } catch (e) {
+            console.error('Error loading stored actions:', e);
+            // If parsing fails, clear the corrupted data
+            localStorage.removeItem('zoom-pending-actions');
+          }
+        },
+
+        saveActions() {
+          try {
+            // Save all actions including their status, responseData, and expanded state
+            localStorage.setItem('zoom-pending-actions', JSON.stringify(this.pendingActions));
+          } catch (e) {
+            console.error('Error saving actions:', e);
+          }
+        },
+
         connectSSE() {
           // Detect if we're running in an embedded environment
           const isEmbedded = window.parent !== window || window.location !== window.parent.location;
@@ -2633,6 +2579,7 @@
                 const action = this.pendingActions.find(a => a.id === content.action_id);
                 if (action && action.status === 'in-progress') {
                   action.progressMessage = content.data;
+                  this.saveActions();
                   console.log('✅ [SSE] Updated action progress:', content.data);
                 }
                 return; // Don't update transcript processing message for action-specific progress
@@ -2719,6 +2666,7 @@
               };
               
               this.pendingActions.push(newAction);
+              this.saveActions();
               console.log('✅ Added proposed action to queue:', newAction.description);
             } catch (e) {
               console.error('❌ [SSE] Error processing proposed-action:', e);
@@ -2735,8 +2683,22 @@
               // Find and update the action
               const action = this.pendingActions.find(a => a.id === actionId);
               if (action) {
+                // Check if HTTP already completed this action
+                const alreadyCompleted = action.status === 'completed' || 
+                  this.transcripts.some(t => 
+                    t.actionId === actionId && 
+                    t.user_id === 'zoom-ai' &&
+                    t.completed
+                  );
+                
+                if (alreadyCompleted) {
+                  console.log(`✅ Action ${actionId} already completed via HTTP, skipping SSE update`);
+                  return; // Exit early - HTTP already handled it
+                }
+                
                 action.status = 'completed';
                 action.progressMessage = 'Completed successfully';
+                this.saveActions();
                 
                 // Add response to transcripts if provided
                 if (responseTranscript) {
@@ -2752,14 +2714,16 @@
                     tools: responseTranscript.tools,
                     routing: responseTranscript.routing,
                     original_message: responseTranscript.original_message,
-                    actionId: actionId
+                    actionId: actionId,
+                    completed: true,
+                    delivered_via_sse: true // Flag for debugging
                   };
                   
                   this.transcripts.unshift(aiTranscript);
                   this.saveTranscripts();
                 }
                 
-                console.log('✅ Action marked as completed:', action.description);
+                console.log('✅ Action marked as completed via SSE:', action.description);
                 
                 // Move to bottom after a delay
                 setTimeout(() => {
@@ -2921,11 +2885,29 @@
 
           // Check for duplicate transcripts (exact match on data and user_id within 5 seconds)
           // Also check original_message for AI responses to catch SSE/HTTP duplicates
+          // Also check actionId for action responses to catch SSE/HTTP duplicates
           const isDuplicate = this.transcripts.some(t => {
             // Basic duplicate check: same data + user_id + timestamp within 5s
             const basicMatch = t.data === newTranscript.data && 
                               t.user_id === newTranscript.user_id &&
                               Math.abs(t.timestamp - newTranscript.timestamp) < 5000;
+            
+            // For action responses, check actionId first (most reliable)
+            if (newTranscript.actionId && t.actionId) {
+              if (newTranscript.actionId === t.actionId && 
+                  newTranscript.user_id === 'zoom-ai' &&
+                  t.user_id === 'zoom-ai') {
+                console.log('🚫 [HANDLER] Duplicate action response detected (same actionId):', {
+                  actionId: newTranscript.actionId,
+                  user_id: newTranscript.user_id,
+                  data_preview: newTranscript.data?.substring(0, 50),
+                  existing_timestamp: t.timestamp,
+                  new_timestamp: newTranscript.timestamp,
+                  time_diff: Math.abs(t.timestamp - newTranscript.timestamp)
+                });
+                return true;
+              }
+            }
             
             // For AI responses, also check original_message to catch SSE/HTTP duplicates
             // Even if timestamps differ slightly, same original_message + same response = duplicate
@@ -3038,6 +3020,7 @@
         clearCompletedActions() {
           const completedCount = this.pendingActions.filter(a => a.status === 'completed').length;
           this.pendingActions = this.pendingActions.filter(a => a.status !== 'completed');
+          this.saveActions();
           console.log(`🗑️ Cleared ${completedCount} completed actions`);
         },
 
@@ -3045,6 +3028,7 @@
           const actionIndex = this.pendingActions.findIndex(a => a.id === actionId);
           if (actionIndex !== -1) {
             this.pendingActions.splice(actionIndex, 1);
+            this.saveActions();
             console.log(`🗑️ Deleted action: ${actionId}`);
           }
         },
@@ -3059,6 +3043,7 @@
           // Immediately update status to prevent double-execution
           action.status = 'in-progress';
           action.progressMessage = 'Starting...';
+          this.saveActions();
           
           // Log concurrent execution info
           const activeActions = this.pendingActions.filter(a => a.status === 'in-progress').length;
@@ -3096,7 +3081,21 @@
               console.log(`📨 Action ${action.id} response received`);
 
               // Check if we received the response directly or need to wait for SSE
+              // IMPORTANT: Check if SSE already delivered before adding HTTP response
               if (result.response_transcript) {
+                // Check if action was already completed via SSE
+                const alreadyCompleted = action.status === 'completed' || 
+                  this.transcripts.some(t => 
+                    t.actionId === action.id && 
+                    t.user_id === 'zoom-ai' &&
+                    t.completed
+                  );
+                
+                if (alreadyCompleted) {
+                  console.log(`✅ Action ${action.id} already completed via SSE, skipping HTTP response`);
+                  return; // Exit early - SSE already handled it
+                }
+                
                 // Got immediate response
                 const aiTranscript = {
                   user_id: result.response_transcript.user_id,
@@ -3106,7 +3105,9 @@
                   tools: result.response_transcript.tools,
                   routing: result.response_transcript.routing,
                   original_message: result.response_transcript.original_message,
-                  actionId: action.id // Link to action
+                  actionId: action.id, // Link to action
+                  completed: true,
+                  delivered_via_http: true // Flag for debugging
                 };
 
                 // Add to transcripts
@@ -3118,8 +3119,9 @@
                 action.progressMessage = 'Completed successfully';
                 action.responseData = result.response_transcript.data; // Store response for expandable view
                 action.expanded = false; // Initialize expanded state
+                this.saveActions();
 
-                console.log(`✅ Action ${action.id} completed: ${action.description}`);
+                console.log(`✅ Action ${action.id} completed via HTTP: ${action.description}`);
                 
                 // Log how many are still running
                 const stillRunning = this.pendingActions.filter(a => a.status === 'in-progress').length;
@@ -3141,6 +3143,7 @@
               if (action.status === 'in-progress') {
                 action.status = 'pending';
                 action.progressMessage = 'Failed - click to retry';
+                this.saveActions();
               }
             }
           })();
@@ -4135,6 +4138,7 @@
                     console.log('✅ Added proposed action:', newAction.description);
                   }
                 });
+                this.saveActions();
 
                 return; // Exit early - don't process as normal response
               }
