@@ -324,11 +324,11 @@ export async function executeWeatherQuery(groqClient, location) {
       messages: [
         {
           role: "system",
-          content: `You are Zoom AI, a helpful weather assistant. TODAY'S DATE: ${today}. Respond with a single short line.`
+          content: `You are Zoom AI, a helpful weather assistant with WEB SEARCH capabilities. TODAY'S DATE: ${today}. Use web search to find CURRENT, REAL-TIME weather data. Respond with a single short line including actual temperature and conditions.`
         },
         {
           role: "user",
-          content: `What's the current weather in ${location}? Return ONLY a single sentence with temperature, conditions, and any relevant details. Keep it brief and conversational.`
+          content: `What's the current weather in ${location}? Use web search to get real-time weather data. Return ONLY a single sentence with actual temperature, current conditions, and any relevant details. Keep it brief and conversational.`
         }
       ]
     });

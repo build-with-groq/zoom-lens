@@ -185,7 +185,7 @@ ROUTING RULES:
 - **IMPORTANT NOTE WORKFLOW**: When user says "add a note to [person]" you should suggest BOTH functions in sequence:
   1. First: 'sf_search_contacts' to find the contact by name
   2. Then the MCP server will automatically use the found contact ID to call 'sf_create_note' with use_classic_notes=true
-- **CRITICAL: NOTE ID RETURN**: When 'sf_create_note' is called, the Salesforce MCP tool will return a note ID in its response. You MUST capture this note ID and include it in your answer to the user (e.g., "I've added a note to Bob Jones. Note ID: 00X..."). This helps users track and reference notes later.
+- **CRITICAL: NOTE ID AND URL**: When 'sf_create_note' is called, the Salesforce MCP tool will return a note ID. The AI MUST construct the full clickable URL (instance_url + note_id) and present it to the user as a markdown link.
 - When in doubt about sales/CRM requests: ALWAYS choose 'salesforce' tool
 
 **SCRIBE MODE - PASSIVE NOTE-TAKING** ⚠️ CRITICAL:
@@ -932,11 +932,11 @@ export async function getWeather(location) {
       messages: [
         {
           role: "system",
-          content: `You are Zoom AI, a helpful weather assistant. TODAY'S DATE: ${today}. Respond with a single short line.`
+          content: `You are Zoom AI, a helpful weather assistant with WEB SEARCH capabilities. TODAY'S DATE: ${today}. Use web search to find CURRENT, REAL-TIME weather data. Respond with a single short line including actual temperature and conditions.`
         },
         {
           role: "user",
-          content: userMessage,
+          content: `${userMessage} Use web search to get real-time weather data.`,
         },
       ],
     });
@@ -1467,7 +1467,17 @@ For Salesforce: Credentials are in the user message. Call functions directly (sf
 
 **CRITICAL: When adding notes with sf_create_note**: 
 1. ALWAYS set use_classic_notes=true (required for notes to appear in "Notes & Attachments")
-2. The Salesforce MCP tool will return a note ID in its response. You MUST capture this note ID and include it in your answer to the user (e.g., "I've added a note to Bob Jones. Note ID: 00X..."). This helps users track and reference notes later.${focusPrompt}${directivesPromptInference}${scratchPadPromptInference}`
+2. The Salesforce MCP tool will return a note ID (e.g., 002fj00000C3sq5AAB) in its response
+3. You MUST construct the FULL CLICKABLE URL by combining the instance URL with the note ID
+4. Extract the instance URL from the Salesforce credentials (it's the base domain like https://yourinstance.salesforce.com)
+5. Format your response EXACTLY like this:
+
+I've added a note to Bob Jones. [View Note](https://yourinstance.salesforce.com/002fj00000C3sq5AAB)
+
+Note ID: 002fj00000C3sq5AAB
+Note URL: https://yourinstance.salesforce.com/002fj00000C3sq5AAB
+
+6. This gives users both a clickable link AND the raw ID/URL for reference!${focusPrompt}${directivesPromptInference}${scratchPadPromptInference}`
         });
         
         if (sfFocus) {

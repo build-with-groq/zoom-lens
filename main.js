@@ -1896,7 +1896,7 @@ app.post('/api/execute-action', async (c) => {
     console.log(`\n   🚀 Executing action inference...\n`);
     
     // Execute the action using the inference pipeline
-    actionProgressCallback('Starting action execution...');
+    actionProgressCallback('Starting action...');
     
     let result;
     let responseTranscript;
