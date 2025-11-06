@@ -49,6 +49,7 @@ import {
   MODEL_DISCOVERY,
   MODEL_EXTRACTOR,
   MODEL_COMPRESSOR,
+  MODEL_DIRECT_ANSWER,
   isAIGeneratedMessage
 } from "./config.js";
 import {
@@ -452,7 +453,8 @@ app.get("/public/:filename", async (c) => {
       'groq-logo.svg',
       'Zoom-Logo-500x281.png',
       'Equinix-Emblem-500x281.png',
-      'Equinix-Logo-500x281.png'
+      'Equinix-Logo-500x281.png',
+      'Salesforce.com_logo.svg.png'
     ];
     
     if (!allowedFiles.includes(filename)) {
@@ -464,6 +466,8 @@ app.get("/public/:filename", async (c) => {
       ? 'image/svg+xml' 
       : filename.endsWith('.png')
       ? 'image/png'
+      : filename.endsWith('.webp')
+      ? 'image/webp'
       : 'application/octet-stream';
     
     return new Response(file, {
@@ -1030,14 +1034,47 @@ async function updateDirectives(newContent, configOrUserId = 'default') {
     // Handle both signatures: (newContent, userId) OR (transcript, config)
     const userId = typeof configOrUserId === 'string' ? configOrUserId : 'default';
 
-    const result = setDirectives(userId, newContent);
+    // Use LLM to clean up and extract just the directive content
+    // This removes instruction text like "Hey Zoom, use the update_directives tool to set these directives:"
+    let cleanedContent = newContent;
+    
+    try {
+      const cleanupResponse = await groqClient.chat.completions.create({
+        model: MODEL_DIRECT_ANSWER, // Use lightweight model for quick cleanup
+        messages: [
+          { 
+            role: "system", 
+            content: "Extract ONLY the directive content. Remove all instructions, tool names, and wrapper text. Return just the directive itself, nothing else." 
+          },
+          { 
+            role: "user", 
+            content: `Extract the directive from this text:\n\n${newContent}` 
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 500
+      });
+
+      const extractedContent = cleanupResponse.choices[0]?.message?.content?.trim();
+      if (extractedContent && extractedContent.length > 0) {
+        cleanedContent = extractedContent;
+        console.log('📋 Cleaned directive content:', cleanedContent.substring(0, 100));
+      } else {
+        console.warn('⚠️ LLM cleanup returned empty, using original content');
+      }
+    } catch (cleanupError) {
+      console.warn('⚠️ Failed to clean directive content with LLM, using original:', cleanupError.message);
+      // Continue with original content if cleanup fails
+    }
+
+    const result = setDirectives(userId, cleanedContent);
 
     // Broadcast update to frontend via SSE
     if (result.success) {
       broadcastEvent({
         event: 'directive-updated',
         data: {
-          content: newContent,
+          content: cleanedContent, // Use cleaned content for broadcast
           timestamp: Date.now(),
           updatedBy: 'ai'
         }
@@ -1045,7 +1082,7 @@ async function updateDirectives(newContent, configOrUserId = 'default') {
     }
 
     // Return with displayable message for action feed (both 'response' for inference engine and 'message' for logs)
-    const displayMessage = `📋 Updated directives:\n${newContent.substring(0, 150)}${newContent.length > 150 ? '...' : ''}`;
+    const displayMessage = `📋 Updated directives:\n${cleanedContent.substring(0, 150)}${cleanedContent.length > 150 ? '...' : ''}`;
     return {
       ...result,
       response: displayMessage, // For inference engine display
@@ -1497,14 +1534,30 @@ app.post('/api/trigger-groq', async (c) => {
         routingDecision = { tools: ['unknown'], reasoning: 'Router check failed' };
       }
       
-      // Check if this is ONLY a direct answer (no tools needed)
+      // Check if this is ONLY a direct answer (no tools needed) OR no response needed (scribe mode)
       const isDirectAnswer = routingDecision.tools.length === 1 && 
                             routingDecision.tools[0] === 'direct_answer';
+      const isNoResponseMode = routingDecision.tools.length === 0; // Scribe mode - no action needed
       
       if (isDirectAnswer) {
         console.log(`✅ Direct answer detected - bypassing manual approval, executing immediately`);
         console.log(`   Reasoning: ${routingDecision.reasoning}`);
         // Fall through to normal execution (bypass manual mode for direct answers)
+      } else if (isNoResponseMode) {
+        console.log(`🔕 NO-RESPONSE MODE detected - no action needed (scribe mode)`);
+        console.log(`   Reasoning: ${routingDecision.reasoning}`);
+        console.log(`   This is passive note-taking only - not creating action`);
+        
+        // Return silent response - no action created
+        return c.json({
+          success: true,
+          manual_execution_mode: true,
+          proposed_actions: [], // Empty - no action needed
+          detected: true,
+          skipped: false,
+          no_response_mode: true,
+          reasoning: routingDecision.reasoning
+        });
       } else {
         console.log(`📋 Tool-required action detected - proposing for manual approval`);
         console.log(`   Tools needed: ${routingDecision.tools.join(', ')}`);

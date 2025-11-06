@@ -180,10 +180,12 @@ ROUTING RULES:
 - **NAME UPDATE WORKFLOW**: When user says "I spelled it wrong", "update the name", "fix the name", "change name to [new name]":
   1. First: Search for the most recent lead/contact using context from chat history
   2. Then: Update the name fields (first_name, last_name) using 'sf_update_lead' or 'sf_update_contact'
-- **For adding notes**: Use 'sf_create_note' with parent_id (the record ID to attach the note to), title, and body
+- **For adding notes**: Use 'sf_create_note' with parent_id (the record ID to attach the note to), title, body, and **ALWAYS set use_classic_notes=true**
+- **CRITICAL: ALWAYS USE CLASSIC NOTES**: When calling sf_create_note, you MUST set use_classic_notes=true to ensure notes appear in "Notes & Attachments" section (required for Salesforce compatibility)
 - **IMPORTANT NOTE WORKFLOW**: When user says "add a note to [person]" you should suggest BOTH functions in sequence:
   1. First: 'sf_search_contacts' to find the contact by name
-  2. Then the MCP server will automatically use the found contact ID to call 'sf_create_note'
+  2. Then the MCP server will automatically use the found contact ID to call 'sf_create_note' with use_classic_notes=true
+- **CRITICAL: NOTE ID RETURN**: When 'sf_create_note' is called, the Salesforce MCP tool will return a note ID in its response. You MUST capture this note ID and include it in your answer to the user (e.g., "I've added a note to Bob Jones. Note ID: 00X..."). This helps users track and reference notes later.
 - When in doubt about sales/CRM requests: ALWAYS choose 'salesforce' tool
 
 **SCRIBE MODE - PASSIVE NOTE-TAKING** ⚠️ CRITICAL:
@@ -216,6 +218,21 @@ You are ALSO a meeting scribe. ALWAYS evaluate if this conversation contains use
 **ONLY SKIP notes for**:
 - Exact repeats of what's already in scratch pad
 - Completely trivial utterances with zero future value
+
+**⚠️ CRITICAL: NO-RESPONSE MODE (Skip Tool Execution)**
+When ACTIVE DIRECTIVES indicate you are in SCRIBE/MEETING MODE (e.g., "Help take notes about the conversation", "This is a conversation with Bob Jones"):
+- For CASUAL CONVERSATION or GREETINGS that don't require a response → return EMPTY tools array: "tools": []
+- ONLY use tools if user explicitly requests information or action
+- Examples of NO-RESPONSE situations:
+  * "Hey, Bob, how's it going?" → tools: [] (just a greeting, take notes only)
+  * "Um… good" → tools: [] (casual response, take notes only)
+  * Small talk that's part of the meeting → tools: [] (take notes, don't interrupt)
+- Examples that NEED response:
+  * "What's the weather?" → tools: ["weather"]
+  * "Search for leads" → tools: ["salesforce"]
+  * Direct questions requiring information → use appropriate tool
+
+**When tools array is EMPTY, you MUST still provide scratchpad_notes if there's context worth remembering!**
 
 **EXPLICIT SCRATCHPAD REQUESTS**:
 If the user EXPLICITLY asks to add/save something to the scratchpad (e.g., "add that to scratchpad", "save to notes", "summarize to scratchpad"):
@@ -407,11 +424,12 @@ Response: {
         "last_name": "Jones",
         "first_name": "Bob",
         "title": "Email Reminder",
-        "body": "Need to email Bob the examples."
+        "body": "Need to email Bob the examples.",
+        "use_classic_notes": true
       }
     }
   ],
-  "reasoning": "User wants to add a note to a contact in Salesforce. First search for Bob Jones, then add the note to his record.",
+  "reasoning": "User wants to add a note to a contact in Salesforce. First search for Bob Jones, then add the note to his record. Using Classic Notes for compatibility.",
   "primary_intent": "crm_note",
   "confidence": 0.93
 }
@@ -469,6 +487,44 @@ Response: {
   "reasoning": "Context shows recent Salesforce lead creation. Vague 'update' reference with person's name indicates Salesforce update operation.",
   "primary_intent": "crm_update",
   "confidence": 0.90
+}
+
+Example with SCRIBE MODE (Directive: "This is a conversation with Bob Jones. Help take notes about the conversation"):
+Question: "Hey, Bob, how's it going?"
+Response: {
+  "tools": [],
+  "reasoning": "Directive indicates scribe/meeting mode. This is a casual greeting with no explicit request for information or action. Taking notes only, no response needed.",
+  "primary_intent": "meeting_conversation",
+  "confidence": 0.95,
+  "scratchpad_notes": "User greeted Bob Jones to start conversation"
+}
+
+Example with SCRIBE MODE (Directive: "This is a conversation with Bob Jones. Help take notes about the conversation"):
+Question: "Did we say you wanted to go out to lunch the other day, or dinner?"
+Response: {
+  "tools": [],
+  "reasoning": "Directive indicates scribe/meeting mode. User asking Bob about previous plans. This is conversational, part of the meeting flow. Taking notes only.",
+  "primary_intent": "meeting_conversation",
+  "confidence": 0.93,
+  "scratchpad_notes": "User asking Bob Jones about previous lunch/dinner plans"
+}
+
+Example with SCRIBE MODE but EXPLICIT REQUEST (Directive: "This is a conversation with Bob Jones. Help take notes"):
+Question: "Hey Zoom, what's the weather in San Francisco?"
+Response: {
+  "tools": [
+    {
+      "tool_id": "weather",
+      "functions": [],
+      "params": {
+        "location": "San Francisco"
+      }
+    }
+  ],
+  "reasoning": "Despite scribe mode, user explicitly requested weather information by saying 'Hey Zoom'. This requires a response.",
+  "primary_intent": "weather",
+  "confidence": 0.98,
+  "scratchpad_notes": "User asked for SF weather during conversation with Bob Jones"
 }
 
 Now analyze the user's question and return ONLY valid JSON:`;
@@ -870,7 +926,18 @@ export async function performWebSearch(query, context = {}) {
     const messages = [
       {
         role: "system",
-        content: `You are Zoom AI, a helpful assistant with web search and code execution capabilities. TODAY'S DATE: ${today}
+        content: `You are Zoom AI, a helpful assistant with web search and code execution capabilities. 
+
+**TODAY'S DATE: ${today}**
+
+**CRITICAL: PRIORITIZE RECENT INFORMATION**:
+- TODAY'S DATE is ${today} - ALWAYS prioritize information from ${today} or very recent dates
+- When searching the web, look for the MOST RECENT information available
+- Prefer sources from 2024 or later, especially recent news, updates, or current events
+- If information is time-sensitive (events, conferences, product launches, company news, etc.), prioritize the LATEST available information
+- Avoid pulling up old/stale information unless specifically requested
+- When in doubt between old and new information, ALWAYS choose the newer information
+- For events, conferences, or time-sensitive topics, search for dates close to ${today}
 
 **CRITICAL CONTEXT INSTRUCTIONS**:
 - The user may ask FOLLOW-UP questions that refer to previous messages in the conversation
@@ -952,11 +1019,17 @@ ${historyText}
       console.warn('⚠️ Groq Compound tool choice error detected - attempting retry with simplified prompt...');
       
       try {
-        // Retry with a more direct, simplified prompt
-        const retryMessages = [{
-          role: "user",
-          content: `Please answer this question: ${query}`
-        }];
+        // Retry with a more direct, simplified prompt (but still include date and recent info emphasis)
+        const retryMessages = [
+          {
+            role: "system",
+            content: `You are Zoom AI. TODAY'S DATE: ${today}. When searching for information, prioritize the MOST RECENT information available. Avoid old/stale information unless specifically requested.`
+          },
+          {
+            role: "user",
+            content: `Please answer this question: ${query}`
+          }
+        ];
         
         console.log('🔄 Retry attempt with simplified prompt');
         const retryResponse = await groqClient.chat.completions.create({
@@ -1193,6 +1266,33 @@ export async function performGroqInference(transcript, userName, context = 'gene
     const toolsUsed = [];
     const mcpTools = [];
 
+    // Check if we're in NO-RESPONSE MODE (empty tools array from scribe mode)
+    const isNoResponseMode = routingDecision.tools.length === 0;
+    
+    if (isNoResponseMode) {
+      console.log(`\n${'='.repeat(80)}`);
+      console.log(`🔕 NO-RESPONSE MODE DETECTED`);
+      console.log(`   Router returned empty tools array (scribe/meeting mode)`);
+      console.log(`   This is passive note-taking only - no AI response will be generated`);
+      console.log(`${'='.repeat(80)}\n`);
+
+      // Return an empty response with detected: true so frontend knows we processed it
+      // The router should have taken notes via scratchpad_notes field
+      return {
+        detected: true,
+        response: '', // Empty response - no interruption in the conversation
+        tools: [],
+        routing: {
+          tools: [],
+          reasoning: routingDecision.reasoning || 'Scribe mode: passive note-taking only',
+          primaryIntent: routingDecision.primaryIntent || 'meeting_conversation',
+          confidence: routingDecision.confidence || 0.9
+        },
+        scratchpad_notes: routingDecision.scratchpad_notes || null,
+        no_response_mode: true
+      };
+    }
+
     // Check if scratchpad_update is present, skip tool execution and return simple confirmation
     const hasExplicitUpdate = routingDecision.scratchpad_update &&
                               typeof routingDecision.scratchpad_update === 'string' &&
@@ -1321,7 +1421,11 @@ export async function performGroqInference(transcript, userName, context = 'gene
           role: "system",
           content: `You are Zoom AI assistant. Today's date is ${today}. Provide accurate, helpful responses using available tools.
 
-For Salesforce: Credentials are in the user message. Call functions directly (sf_search_leads, sf_create_lead, sf_run_soql_query, etc.).${focusPrompt}${directivesPromptInference}${scratchPadPromptInference}`
+For Salesforce: Credentials are in the user message. Call functions directly (sf_search_leads, sf_create_lead, sf_run_soql_query, etc.).
+
+**CRITICAL: When adding notes with sf_create_note**: 
+1. ALWAYS set use_classic_notes=true (required for notes to appear in "Notes & Attachments")
+2. The Salesforce MCP tool will return a note ID in its response. You MUST capture this note ID and include it in your answer to the user (e.g., "I've added a note to Bob Jones. Note ID: 00X..."). This helps users track and reference notes later.${focusPrompt}${directivesPromptInference}${scratchPadPromptInference}`
         });
         
         if (sfFocus) {

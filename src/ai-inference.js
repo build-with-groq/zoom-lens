@@ -156,10 +156,12 @@ ROUTING RULES:
 - **NAME UPDATE WORKFLOW**: When user says "I spelled it wrong", "update the name", "fix the name", "change name to [new name]":
   1. First: Search for the most recent lead/contact using context from chat history
   2. Then: Update the name fields (first_name, last_name) using 'sf_update_lead' or 'sf_update_contact'
-- **For adding notes**: Use 'sf_create_note' with parent_id (the record ID to attach the note to), title, and body
+- **For adding notes**: Use 'sf_create_note' with parent_id (the record ID to attach the note to), title, body, and **ALWAYS set use_classic_notes=true**
+- **CRITICAL: ALWAYS USE CLASSIC NOTES**: When calling sf_create_note, you MUST set use_classic_notes=true to ensure notes appear in "Notes & Attachments" section (required for Salesforce compatibility)
 - **IMPORTANT NOTE WORKFLOW**: When user says "add a note to [person]" you should suggest BOTH functions in sequence:
   1. First: 'sf_search_contacts' to find the contact by name
-  2. Then the MCP server will automatically use the found contact ID to call 'sf_create_note'
+  2. Then the MCP server will automatically use the found contact ID to call 'sf_create_note' with use_classic_notes=true
+- **CRITICAL: NOTE ID RETURN**: When 'sf_create_note' is called, the Salesforce MCP tool will return a note ID in its response. You MUST capture this note ID and include it in your answer to the user (e.g., "I've added a note to Bob Jones. Note ID: 00X..."). This helps users track and reference notes later.
 - When in doubt about sales/CRM requests: ALWAYS choose 'salesforce' tool
 
 REQUIRED JSON RESPONSE FORMAT:
@@ -342,11 +344,12 @@ Response: {
         "last_name": "Jones",
         "first_name": "Bob",
         "title": "Email Reminder",
-        "body": "Need to email Bob the examples."
+        "body": "Need to email Bob the examples.",
+        "use_classic_notes": true
       }
     }
   ],
-  "reasoning": "User wants to add a note to a contact in Salesforce. First search for Bob Jones, then add the note to his record.",
+  "reasoning": "User wants to add a note to a contact in Salesforce. First search for Bob Jones, then add the note to his record. Using Classic Notes for compatibility.",
   "primary_intent": "crm_note",
   "confidence": 0.93
 }
@@ -1150,7 +1153,11 @@ export async function performGroqInference(transcript, userName, context = 'gene
           role: "system",
           content: `You are Zoom AI assistant. Today's date is ${today}. Provide accurate, helpful responses using available tools.
 
-For Salesforce: Credentials are in the user message. Call functions directly (sf_search_leads, sf_create_lead, sf_run_soql_query, etc.).${focusPrompt}`
+For Salesforce: Credentials are in the user message. Call functions directly (sf_search_leads, sf_create_lead, sf_run_soql_query, etc.).
+
+**CRITICAL: When adding notes with sf_create_note**: 
+1. ALWAYS set use_classic_notes=true (required for notes to appear in "Notes & Attachments")
+2. The Salesforce MCP tool will return a note ID in its response. You MUST capture this note ID and include it in your answer to the user (e.g., "I've added a note to Bob Jones. Note ID: 00X..."). This helps users track and reference notes later.${focusPrompt}`
         });
         
         if (sfFocus) {

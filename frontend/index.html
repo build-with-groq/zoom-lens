@@ -192,8 +192,8 @@
               </button>
             </div>
             <!-- Auto-route toggle -->
-            <div class="flex flex-col gap-2 mt-2">
-              <div class="flex items-center gap-2">
+            <div class="flex flex-col gap-0 mt-2">
+              <div class="flex items-center gap-2 min-h-[32px]">
                 <label class="flex items-center gap-2 cursor-pointer">
                   <input 
                     type="checkbox" 
@@ -211,7 +211,7 @@
                 </span>
               </div>
               
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 min-h-[32px]">
                 <label class="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -223,26 +223,29 @@
                 </label>
               </div>
 
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 min-h-[32px]">
                 <label class="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    x-model="manualExecutionMode"
-                    @change="localStorage.setItem('manualExecutionMode', manualExecutionMode)"
+                    x-model="actionQueueEnabled"
+                    @change="localStorage.setItem('actionQueueEnabled', actionQueueEnabled); manualExecutionMode = actionQueueEnabled;"
                     class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   />
-                  <span class="text-xs text-gray-600">Actions Queue (review actions before running)</span>
+                  <span class="text-xs text-gray-600">Action Queue</span>
                 </label>
                 <span 
                   class="text-xs px-2 py-0.5 rounded-full"
-                  :class="manualExecutionMode ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'"
-                >
-                  <span x-show="manualExecutionMode">MANUAL</span>
-                  <span x-show="!manualExecutionMode">AUTO</span>
-                </span>
+                  :class="actionQueueEnabled ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'"
+                  x-text="actionQueueEnabled ? 'ON' : 'OFF'"
+                ></span>
+
+                <select x-show="actionQueueEnabled" x-model="actionQueueMode" @change="localStorage.setItem('actionQueueMode', actionQueueMode); localStorage.setItem('manualExecutionMode', manualExecutionMode)" class="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
+                  <option value="manual">Manual</option>
+                  <option value="auto">Auto</option>
+                </select>
               </div>
 
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 min-h-[32px]">
                 <label class="flex items-center gap-2 cursor-pointer">
                   <input 
                     type="checkbox" 
@@ -267,7 +270,7 @@
                 </select>
               </div>
 
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 min-h-[32px]">
                 <label class="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -478,115 +481,113 @@
             <p class="text-sm text-text-muted">Assistant responses and tool results from your "Hey Zoom" requests.</p>
           </div>
           
-          <!-- Actions Panel (Actions Queue Mode) -->
-          <div x-show="manualExecutionMode" class="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-300">
-            <div class="flex items-center justify-between mb-3">
-              <div class="flex items-center gap-2">
-                <span class="text-lg">⚡</span>
-                <h4 class="font-semibold text-gray-800">Actions Queue</h4>
-                <span x-show="pendingActions.length > 0" class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700" x-text="pendingActions.filter(a => a.status === 'pending').length + ' pending'"></span>
-              </div>
-              <button 
-                x-show="pendingActions.filter(a => a.status === 'completed').length > 0"
-                @click="clearCompletedActions"
-                class="text-xs text-white hover:text-gray-100"
-              >
-                Clear Completed
-              </button>
-            </div>
-            
-            <!-- Empty State -->
-            <div x-show="pendingActions.length === 0" class="pb-8 text-center">
-              <div class="text-4xl mb-3 opacity-50">⚡</div>
-              <p class="text-sm font-medium text-gray-700">No actions yet</p>
-              <p class="text-xs text-gray-500 mt-1">Actions will appear here when you send messages</p>
-            </div>
-            
-            <!-- Pending Actions -->
-            <div x-show="pendingActions.length > 0" class="space-y-2">
-              <template x-for="action in pendingActions" :key="action.id">
-                <div 
-                  class="p-3 rounded-lg border transition-all card-entrance"
-                  :class="{
-                    'bg-white border-gray-300': action.status === 'pending',
-                    'bg-white border-blue-500 shadow-sm': action.status === 'in-progress',
-                    'bg-blue-50 border-blue-200': action.status === 'completed'
-                  }"
+          <!-- Actions Panel (Action Queue Mode) -->
+          <div x-show="manualExecutionMode" x-data="actionQueuePanel()">
+            <div class="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-300">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="text-lg">⚡</span>
+                  <h4 class="font-semibold text-gray-800">Action Queue</h4>
+                  <span x-show="pendingActions.length > 0" class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700" x-text="pendingActions.filter(a => a.status === 'pending').length + ' pending'"></span>
+                </div>
+                <button 
+                  x-show="pendingActions.filter(a => a.status === 'completed').length > 0"
+                  @click="clearCompletedActions"
+                  class="text-xs text-white hover:text-gray-100"
                 >
-                  <div class="flex items-start gap-3">
-                    <!-- Action Content -->
-                    <div class="flex-1 min-w-0">
-                      <div class="text-sm font-medium text-gray-800" x-text="action.description"></div>
-                      <div x-show="action.reasoning && action.status !== 'completed'" class="text-xs text-gray-500 mt-1" x-text="action.reasoning"></div>
-                      <div x-show="action.status === 'completed'" class="text-xs text-blue-600 mt-1">Completed</div>
-                      
-                      <!-- Progress Messages (in-progress only) -->
-                      <div x-show="action.status === 'in-progress' && action.progressMessage" class="mt-2 text-xs text-blue-600 flex items-center gap-2">
-                        <span x-text="action.progressMessage"></span>
+                  Clear Completed
+                </button>
+              </div>
+              
+              <!-- Empty State -->
+              <div x-show="pendingActions.length === 0" class="pb-8 text-center">
+                <div class="text-4xl mb-3 opacity-50">⚡</div>
+                <p class="text-sm font-medium text-gray-700">No actions yet</p>
+                <p class="text-xs text-gray-500 mt-1">Actions will appear here when you send messages</p>
+              </div>
+              
+              <!-- Pending Actions -->
+              <div x-show="pendingActions.length > 0" class="space-y-2">
+                <template x-for="action in pendingActions" :key="action.id">
+                  <div 
+                    class="p-3 rounded-lg border transition-all card-entrance"
+                    :class="{
+                      'bg-white border-gray-300': action.status === 'pending',
+                      'bg-white border-blue-500 shadow-sm': action.status === 'in-progress',
+                      'bg-blue-50 border-blue-200': action.status === 'completed'
+                    }"
+                  >
+                    <div class="flex items-start gap-3">
+                      <!-- Action Content -->
+                      <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium text-gray-800" x-text="action.description"></div>
+                        
+                        <!-- Keep reasoning visible but show different text based on status -->
+                        <div x-show="action.reasoning" class="text-xs mt-1" :class="action.status === 'completed' ? 'text-gray-500' : 'text-gray-500'" x-text="action.reasoning"></div>
+                        
+                        <!-- Progress Messages (in-progress only) -->
+                        <div x-show="action.status === 'in-progress' && action.progressMessage" class="mt-2 text-xs text-blue-600 flex items-center gap-2">
+                          <span x-text="action.progressMessage"></span>
+                        </div>
+                        
+                        <!-- Tools Used -->
+                        <div x-show="action.tools && action.tools.length > 0" class="mt-2">
+                          <span class="badge badge-tool text-xs !ml-0" x-text="action.tools.map(t => getToolDisplayName(t)).join(', ')"></span>
+                        </div>
                       </div>
                       
-                      <!-- Tools Used -->
-                      <div x-show="action.tools && action.tools.length > 0" class="mt-2">
-                        <span class="badge badge-tool text-xs !ml-0" x-text="action.tools.map(t => getToolDisplayName(t)).join(', ')"></span>
+                      <!-- Action Buttons -->
+                      <div class="flex-shrink-0 flex items-center gap-2">
+                        <!-- Play Button (Manual mode only) -->
+                        <button
+                          x-show="action.status === 'pending' && actionQueueMode === 'manual'"
+                          @click.stop="executeAction(action)"
+                          class="p-1.5 text-white hover:text-blue-500 hover:bg-blue-50 cursor-pointer rounded transition-colors"
+                          title="Run this action"
+                        >
+                          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"></path>
+                          </svg>
+                        </button>
+                        
+                        <!-- Loader (in-progress OR pending in auto mode) -->
+                        <div x-show="action.status === 'in-progress' || (action.status === 'pending' && actionQueueMode === 'auto')" class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+                        
+                        <!-- Delete Button -->
+                        <button
+                          @click.stop="deleteAction(action.id)"
+                          class="p-1.5 text-gray-100 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                          title="Delete this action"
+                        >
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                          </svg>
+                        </button>
                       </div>
                     </div>
                     
-                    <!-- Action Buttons -->
-                    <div class="flex-shrink-0 flex items-center gap-2">
-                      <!-- Play Button (pending) / Loader (in-progress) -->
-                      <button
-                        x-show="action.status === 'pending' || action.status === 'in-progress'"
-                        @click.stop="action.status === 'pending' ? executeAction(action) : null"
-                        :class="action.status === 'pending' ? 'hover:text-blue-500 hover:bg-blue-50 cursor-pointer' : 'cursor-default'"
-                        class="p-1.5 text-white rounded transition-colors"
-                        :title="action.status === 'pending' ? 'Run this action' : 'Running...'"
-                      >
-                        <svg x-show="action.status === 'pending'" class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"></path>
-                        </svg>
-                        <div x-show="action.status === 'in-progress'" class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
-                      </button>
-                      
-                      <!-- Answer Button (completed only) -->
-                      <button
-                        x-show="action.status === 'completed' && action.responseData"
-                        @click.stop="action.expanded = !action.expanded; saveActions()"
-                        class="px-2 py-1 text-xs text-blue-600 bg-blue-50 border border-blue-600 hover:bg-blue-100 rounded transition-colors flex items-center gap-1"
-                        title="View answer details"
-                      >
-                        <span x-text="action.expanded ? '▼' : '▶'"></span>
-                        <span>Answer</span>
-                      </button>
-                      
-                      <!-- Delete Button -->
-                      <button
-                        @click.stop="deleteAction(action.id)"
-                        class="p-1.5 text-gray-100 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                        title="Delete this action"
-                      >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                        </svg>
-                      </button>
+                    <!-- Answer Detail (always shown for completed actions) -->
+                    <div 
+                      x-show="action.status === 'completed' && action.responseData" 
+                      class="mt-0"
+                    >
+                      <div class="flex justify-end mb-1">
+                        <button
+                          @click.stop="action.expanded = !action.expanded; saveActions()"
+                          class="text-xs text-blue-600 hover:text-blue-800 hover:bg-transparent p-0 border-none bg-transparent"
+                        >
+                          <span x-text="action.expanded ? 'SHRINK' : 'EXPAND'"></span>
+                        </button>
+                      </div>
+                      <div 
+                        class="bg-white border border-blue-500 rounded p-3 text-sm text-gray-600 markdown-content overflow-y-auto transition-all"
+                        :class="action.expanded ? 'max-h-96' : 'max-h-[100px]'"
+                        x-html="formatAssistantResponse({user_id: 'zoom-ai', data: action.responseData})"
+                      ></div>
                     </div>
                   </div>
-                  
-                  <!-- Expandable Answer Detail (for completed actions) -->
-                  <div 
-                    x-show="action.status === 'completed' && action.expanded && action.responseData" 
-                    x-transition:enter="transition ease-out duration-200"
-                    x-transition:enter-start="opacity-0 max-h-0"
-                    x-transition:enter-end="opacity-100 max-h-screen"
-                    x-transition:leave="transition ease-in duration-150"
-                    x-transition:leave-start="opacity-100 max-h-screen"
-                    x-transition:leave-end="opacity-0 max-h-0"
-                    class="mt-3 pt-3 border-t border-blue-200 overflow-hidden"
-                  >
-                    <div class="text-xs font-medium text-gray-700 mb-2">Answer:</div>
-                    <div class="text-sm text-gray-600 markdown-content" x-html="formatAssistantResponse({user_id: 'zoom-ai', data: action.responseData})"></div>
-                  </div>
-                </div>
-              </template>
+                </template>
+              </div>
             </div>
           </div>
           
@@ -1093,107 +1094,105 @@
             <p class="text-sm text-text-muted">Full conversation history with all participants.</p>
           </div>
           
-          <!-- Actions Panel (Actions Queue Mode) - Same as Action Feed -->
-          <div x-show="manualExecutionMode && pendingActions.length > 0" class="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-300">
-            <div class="flex items-center justify-between mb-3">
-              <div class="flex items-center gap-2">
-                <span class="text-lg">⚡</span>
-                <h4 class="font-semibold text-gray-800">Actions Queue</h4>
-                <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700" x-text="pendingActions.filter(a => a.status === 'pending').length + ' pending'"></span>
-              </div>
-              <button 
-                @click="clearCompletedActions"
-                class="text-xs text-white hover:text-gray-100"
-              >
-                Clear Completed
-              </button>
-            </div>
-            
-            <!-- Pending Actions -->
-            <div class="space-y-2">
-              <template x-for="action in pendingActions" :key="action.id">
-                <div 
-                  class="p-3 rounded-lg border transition-all card-entrance"
-                  :class="{
-                    'bg-white border-gray-300': action.status === 'pending',
-                    'bg-white border-blue-500 shadow-sm': action.status === 'in-progress',
-                    'bg-blue-50 border-blue-200': action.status === 'completed'
-                  }"
+          <!-- Actions Panel (Action Queue Mode) - Same as Action Feed -->
+          <div x-show="actionQueueEnabled && pendingActions.length > 0" x-data="actionQueuePanel()">
+            <div class="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-300">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="text-lg">⚡</span>
+                  <h4 class="font-semibold text-gray-800">Action Queue</h4>
+                  <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700" x-text="pendingActions.filter(a => a.status === 'pending').length + ' pending'"></span>
+                </div>
+                <button 
+                  @click="clearCompletedActions"
+                  class="text-xs text-white hover:text-gray-100"
                 >
-                  <div class="flex items-start gap-3">
-                    <!-- Action Content -->
-                    <div class="flex-1 min-w-0">
-                      <div class="text-sm font-medium text-gray-800" x-text="action.description"></div>
-                      <div x-show="action.reasoning && action.status !== 'completed'" class="text-xs text-gray-500 mt-1" x-text="action.reasoning"></div>
-                      <div x-show="action.status === 'completed'" class="text-xs text-blue-600 mt-1">Completed</div>
-                      
-                      <!-- Progress Messages (in-progress only) -->
-                      <div x-show="action.status === 'in-progress' && action.progressMessage" class="mt-2 text-xs text-blue-600 flex items-center gap-2">
-                        <span x-text="action.progressMessage"></span>
+                  Clear Completed
+                </button>
+              </div>
+              
+              <!-- Pending Actions -->
+              <div class="space-y-2">
+                <template x-for="action in pendingActions" :key="action.id">
+                  <div 
+                    class="p-3 rounded-lg border transition-all card-entrance"
+                    :class="{
+                      'bg-white border-gray-300': action.status === 'pending',
+                      'bg-white border-blue-500 shadow-sm': action.status === 'in-progress',
+                      'bg-blue-50 border-blue-200': action.status === 'completed'
+                    }"
+                  >
+                    <div class="flex items-start gap-3">
+                      <!-- Action Content -->
+                      <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium text-gray-800" x-text="action.description"></div>
+                        
+                        <!-- Keep reasoning visible but show different text based on status -->
+                        <div x-show="action.reasoning" class="text-xs mt-1" :class="action.status === 'completed' ? 'text-gray-500' : 'text-gray-500'" x-text="action.reasoning"></div>
+                        
+                        <!-- Progress Messages (in-progress only) -->
+                        <div x-show="action.status === 'in-progress' && action.progressMessage" class="mt-2 text-xs text-blue-600 flex items-center gap-2">
+                          <span x-text="action.progressMessage"></span>
+                        </div>
+                        
+                        <!-- Tools Used -->
+                        <div x-show="action.tools && action.tools.length > 0" class="mt-2">
+                          <span class="badge badge-tool text-xs !ml-0" x-text="action.tools.map(t => getToolDisplayName(t)).join(', ')"></span>
+                        </div>
                       </div>
                       
-                      <!-- Tools Used -->
-                      <div x-show="action.tools && action.tools.length > 0" class="mt-2">
-                        <span class="badge badge-tool text-xs !ml-0" x-text="action.tools.map(t => getToolDisplayName(t)).join(', ')"></span>
+                      <!-- Action Buttons -->
+                      <div class="flex-shrink-0 flex items-center gap-2">
+                        <!-- Play Button (Manual mode only) -->
+                        <button
+                          x-show="action.status === 'pending' && actionQueueMode === 'manual'"
+                          @click.stop="executeAction(action)"
+                          class="p-1.5 text-white hover:text-blue-500 hover:bg-blue-50 cursor-pointer rounded transition-colors"
+                          title="Run this action"
+                        >
+                          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"></path>
+                          </svg>
+                        </button>
+                        
+                        <!-- Loader (in-progress OR pending in auto mode) -->
+                        <div x-show="action.status === 'in-progress' || (action.status === 'pending' && actionQueueMode === 'auto')" class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+                        
+                        <!-- Delete Button -->
+                        <button
+                          @click.stop="deleteAction(action.id)"
+                          class="p-1.5 text-gray-100 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                          title="Delete this action"
+                        >
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                          </svg>
+                        </button>
                       </div>
                     </div>
                     
-                    <!-- Action Buttons -->
-                    <div class="flex-shrink-0 flex items-center gap-2">
-                      <!-- Play Button (pending) / Loader (in-progress) -->
-                      <button
-                        x-show="action.status === 'pending' || action.status === 'in-progress'"
-                        @click.stop="action.status === 'pending' ? executeAction(action) : null"
-                        :class="action.status === 'pending' ? 'hover:text-blue-500 hover:bg-blue-50 cursor-pointer' : 'cursor-default'"
-                        class="p-1.5 text-white rounded transition-colors"
-                        :title="action.status === 'pending' ? 'Run this action' : 'Running...'"
-                      >
-                        <svg x-show="action.status === 'pending'" class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"></path>
-                        </svg>
-                        <div x-show="action.status === 'in-progress'" class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
-                      </button>
-                      
-                      <!-- Answer Button (completed only) -->
-                      <button
-                        x-show="action.status === 'completed' && action.responseData"
-                        @click.stop="action.expanded = !action.expanded; saveActions()"
-                        class="px-2 py-1 text-xs text-blue-600 bg-blue-50 border border-blue-600 hover:bg-blue-100 rounded transition-colors flex items-center gap-1"
-                        title="View answer details"
-                      >
-                        <span x-text="action.expanded ? '▼' : '▶'"></span>
-                        <span>Answer</span>
-                      </button>
-                      
-                      <!-- Delete Button -->
-                      <button
-                        @click.stop="deleteAction(action.id)"
-                        class="p-1.5 text-gray-100 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                        title="Delete this action"
-                      >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                        </svg>
-                      </button>
+                    <!-- Answer Detail (always shown for completed actions) -->
+                    <div 
+                      x-show="action.status === 'completed' && action.responseData" 
+                      class="mt-0"
+                    >
+                      <div class="flex justify-end mb-1">
+                        <button
+                          @click.stop="action.expanded = !action.expanded; saveActions()"
+                          class="text-xs text-blue-600 hover:text-blue-800 hover:bg-transparent p-0 border-none bg-transparent"
+                        >
+                          <span x-text="action.expanded ? 'SHRINK' : 'EXPAND'"></span>
+                        </button>
+                      </div>
+                      <div 
+                        class="bg-white border border-blue-500 rounded p-3 text-sm text-gray-600 markdown-content overflow-y-auto transition-all"
+                        :class="action.expanded ? 'max-h-96' : 'max-h-[100px]'"
+                        x-html="formatAssistantResponse({user_id: 'zoom-ai', data: action.responseData})"
+                      ></div>
                     </div>
                   </div>
-                  
-                  <!-- Expandable Answer Detail (for completed actions) -->
-                  <div 
-                    x-show="action.status === 'completed' && action.expanded && action.responseData" 
-                    x-transition:enter="transition ease-out duration-200"
-                    x-transition:enter-start="opacity-0 max-h-0"
-                    x-transition:enter-end="opacity-100 max-h-screen"
-                    x-transition:leave="transition ease-in duration-150"
-                    x-transition:leave-start="opacity-100 max-h-screen"
-                    x-transition:leave-end="opacity-0 max-h-0"
-                    class="mt-3 pt-3 border-t border-blue-200 overflow-hidden"
-                  >
-                    <div class="text-xs font-medium text-gray-700 mb-2">Answer:</div>
-                    <div class="text-sm text-gray-600 markdown-content" x-html="formatAssistantResponse({user_id: 'zoom-ai', data: action.responseData})"></div>
-                  </div>
-                </div>
-              </template>
+                </template>
+              </div>
             </div>
           </div>
           
@@ -1272,14 +1271,17 @@
         
         <!-- Footer with Logos -->
         <div class="max-w-4xl mx-2 md:mx-auto mt-8 mb-6 flex items-center justify-center gap-4">
-          <a href="https://groq.com" target="_blank" rel="noopener noreferrer" class="hover:opacity-100 transition-opacity">
-            <img src="/public/groq-logo.svg" alt="Groq" class="pt-2 w-[80px] h-auto object-contain opacity-70" />
-          </a>
           <a href="https://zoom.us" target="_blank" rel="noopener noreferrer" class="hover:opacity-100 transition-opacity">
             <img src="/public/Zoom-Logo-500x281.png" alt="Zoom" class="w-[80px] pl-3 h-auto object-contain opacity-70" />
           </a>
-          <a href="https://equinix.com" target="_blank" rel="noopener noreferrer" class="hover:opacity-100 transition-opacity">
+          <a href="https://groq.com" target="_blank" rel="noopener noreferrer" class="hover:opacity-100 transition-opacity">
+            <img src="/public/groq-logo.svg" alt="Groq" class="pt-2 w-[80px] h-auto object-contain opacity-70" />
+          </a>
+          <!-- <a href="https://equinix.com" target="_blank" rel="noopener noreferrer" class="hover:opacity-100 transition-opacity">
             <img src="/public/Equinix-Emblem-500x281.png" alt="Equinix" class="w-[80px] h-auto object-contain opacity-70" />
+          </a> -->
+          <a href="https://salesforce.com" target="_blank" rel="noopener noreferrer" class="hover:opacity-100 transition-opacity">
+            <img src="/public/Salesforce.com_logo.svg.png" alt="Salesforce" class="w-[80px] h-auto object-contain opacity-70" />
           </a>
         </div>
       </div>
@@ -1941,7 +1943,9 @@
         heyZoomStrategy: localStorage.getItem('heyZoomStrategy') || 'reluctant', // Strategy for Hey Zoom responses
         discoveryStrategy: localStorage.getItem('discoveryStrategy') || 'reluctant', // Strategy for Discovery Feed
         showRouterRejections: localStorage.getItem('showRouterRejections') === 'true', // Show router rejection decisions
+        actionQueueEnabled: localStorage.getItem('actionQueueEnabled') !== 'false', // Action Queue enabled/disabled (defaults to true)
         manualExecutionMode: localStorage.getItem('manualExecutionMode') === 'true', // Manual execution mode
+        actionQueueMode: localStorage.getItem('actionQueueMode') || 'manual', // Action Queue mode: 'manual' or 'auto'
         pendingActions: [], // Queue of actions awaiting manual approval
         lastDiscoveryTranscriptCount: 0, // Track when we last ran discovery
         triggerDebounceTimer: null, // Timer for debouncing trigger requests
@@ -1958,6 +1962,7 @@
           this.loadDiscoverySettings();
           this.loadDebounceSettings();
           this.loadToolRegistry();
+          this.loadActionQueueModeSettings();
 
           // Add visibility change listener to detect when tab becomes visible/hidden
           // Critical for voice input when tab might be in background
@@ -2032,6 +2037,33 @@
           this.$watch('discoveryMode', (value) => {
             localStorage.setItem('discovery-mode', value.toString());
             console.log('🔮 Discovery Mode setting changed:', value ? 'ON' : 'OFF');
+          });
+          
+          // Watch for changes to actionQueueEnabled
+          this.$watch('actionQueueEnabled', (value) => {
+            if (value) {
+              // Queue enabled - always use manual_execution_mode to get proposed actions
+              // The difference between Manual and Auto is handled in the frontend
+              this.manualExecutionMode = true;
+              console.log('⚙️ Action Queue ENABLED -', this.actionQueueMode === 'manual' ? 'Manual mode (requires Play)' : 'Auto mode (auto-execute)');
+            } else {
+              // Queue disabled - everything runs auto (no proposed actions)
+              this.manualExecutionMode = false;
+              console.log('⚙️ Action Queue DISABLED - all actions run immediately');
+            }
+          });
+          
+          // Watch for changes to actionQueueMode
+          this.$watch('actionQueueMode', (value) => {
+            console.log('⚙️ Action Queue Mode changed:', value === 'manual' ? 'MANUAL (requires Play)' : 'AUTO (auto-execute)');
+            
+            // Auto mode: execute all pending actions
+            if (value === 'auto' && this.actionQueueEnabled) {
+              console.log('⚡ Auto mode activated - executing all pending actions');
+              this.pendingActions.filter(a => a.status === 'pending').forEach(action => {
+                this.executeAction(action);
+              });
+            }
           });
           
           // Watch for changes to debounceDelay and save to localStorage
@@ -2128,6 +2160,26 @@
             }
           } catch (e) {
             console.error('Error loading debounce settings:', e);
+          }
+        },
+        
+        loadActionQueueModeSettings() {
+          try {
+            const savedEnabled = localStorage.getItem('actionQueueEnabled');
+            if (savedEnabled !== null) {
+              this.actionQueueEnabled = savedEnabled !== 'false';
+            }
+            
+            const savedMode = localStorage.getItem('actionQueueMode');
+            if (savedMode !== null) {
+              this.actionQueueMode = savedMode;
+            }
+            
+            // Sync manualExecutionMode: true if queue is enabled (regardless of manual/auto)
+            // The frontend handles the difference between manual and auto execution
+            this.manualExecutionMode = this.actionQueueEnabled;
+          } catch (e) {
+            console.error('Error loading action queue mode settings:', e);
           }
         },
         
@@ -2668,6 +2720,12 @@
               this.pendingActions.push(newAction);
               this.saveActions();
               console.log('✅ Added proposed action to queue:', newAction.description);
+              
+              // Auto mode: execute action immediately
+              if (this.actionQueueMode === 'auto' && this.actionQueueEnabled) {
+                console.log('⚡ Auto mode: executing action immediately');
+                setTimeout(() => this.executeAction(newAction), 100); // Small delay to ensure UI updates
+              }
             } catch (e) {
               console.error('❌ [SSE] Error processing proposed-action:', e);
             }
@@ -4130,12 +4188,25 @@
                       tools: proposedAction.tools || [],
                       status: 'pending',
                       progressMessage: '',
-                      originalTranscript: transcript,
+                      // CRITICAL: Use originalTranscript from proposed action (has correct structure)
+                      // NOT the websocket transcript which has different structure
+                      originalTranscript: proposedAction.originalTranscript || {
+                        transcript: transcript.original_data || transcript.data,
+                        user_name: transcript.user_name,
+                        user_id: transcript.user_id,
+                        timestamp: transcript.timestamp || Date.now()
+                      },
                       timestamp: Date.now()
                     };
                     
                     this.pendingActions.push(newAction);
                     console.log('✅ Added proposed action:', newAction.description);
+                    
+                    // Auto mode: execute action immediately
+                    if (this.actionQueueMode === 'auto' && this.actionQueueEnabled) {
+                      console.log('⚡ Auto mode: executing action immediately');
+                      setTimeout(() => this.executeAction(newAction), 100); // Small delay to ensure UI updates
+                    }
                   }
                 });
                 this.saveActions();
@@ -4474,6 +4545,15 @@
         }
       }
     }
+  </script>
+  
+  <script>
+    // Register Action Queue Panel as an Alpine component
+    document.addEventListener('alpine:init', () => {
+      Alpine.data('actionQueuePanel', () => ({
+        // Component inherits parent scope automatically via x-data
+      }));
+    });
   </script>
 </body>
 </html>

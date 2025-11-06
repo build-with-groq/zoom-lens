@@ -31,6 +31,7 @@
 
 import { DiscoveryManager } from './discovery-cache-utils.js';
 import { getHeyZoomStrategy } from './response-strategies.js';
+import { getDirectives } from '../directives.js';
 
 /**
  * Action Feed Manager
@@ -127,6 +128,28 @@ export async function evaluateResponseNeed(groqClient, config) {
 
   // Get the strategy configuration
   const strategyConfig = getHeyZoomStrategy(strategy);
+
+  // Check for active directives - if in scribe/meeting mode, ALWAYS pass through to router
+  // The router will decide whether to take notes only (empty tools array) or respond
+  const directives = getDirectives('default');
+  if (directives && directives.active) {
+    // Check if directive indicates scribe/meeting mode
+    const scribeModeKeywords = /\b(take notes?|note[\s-]?taking|scribe|meeting|conversation|sales? call|help take|record|document|capture)\b/i;
+    if (scribeModeKeywords.test(directives.content)) {
+      console.log('📋 DIRECTIVE DETECTED: Scribe/meeting mode - bypassing Hey Zoom decision agent');
+      console.log(`   Directive: "${directives.content.substring(0, 80)}..."`);
+      console.log('   → Passing to router to handle note-taking and selective responses');
+      return {
+        shouldRespond: true,
+        reasoning: 'Active directive for note-taking/meeting mode - passing to router',
+        confidence: 1.0,
+        cached: false,
+        queued: false,
+        bypassedDecisionAgent: true,
+        directiveMode: true
+      };
+    }
+  }
 
   // If Hey Zoom is explicitly enabled (toggle ON), always respond
   if (heyZoomEnabled) {
